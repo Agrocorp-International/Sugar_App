@@ -1407,7 +1407,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const today = new Date();
     today.setHours(0,0,0,0);
     const todayIso = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-    document.getElementById('sim-input-date').value = todayIso;
+    document.getElementById('sim-input-date').value = {{ as_of_date.isoformat() | tojson }};
 
     // Find latest option expiry and set it
     let latest = null;
