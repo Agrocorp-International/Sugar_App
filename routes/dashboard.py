@@ -1,13 +1,12 @@
-from collections import defaultdict
 from datetime import datetime, date
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response
 from sqlalchemy import cast, Date
 from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot
-from routes.positions import build_contract_key, LOT_MULTIPLIERS
 from routes.info import (_parse_futures, _parse_options, _parse_sw_futures,
                          _RAW_FUTURES, _RAW_OPTIONS, _RAW_SW_FUTURES, _RAW_HOLIDAYS)
 from services.pnl_summary import compute_pnl_summary, compute_exposure, get_reference_snapshots
-from services.price_source import get_price_source, load_price_map
+from services.physical_pnl import compute_all_pnl_totals
+from services.price_source import get_price_source
 
 _DTE_WARN_DAYS = 10  # highlight DTE column when this close to expiry
 
@@ -25,44 +24,21 @@ def index():
     ).first()
     latest_trade_date = _latest.data.get("Trade_Date__c") if _latest else None
 
-    # PnL summary
-    prices, _ = load_price_map(price_source, normalise=False)
-    last_price_update = (
-        MarketPrice.query.order_by(MarketPrice.fetched_at.desc()).first()
-    )
+    last_price_update = MarketPrice.query.order_by(MarketPrice.fetched_at.desc()).first()
 
-    total_pnl = None
-    book_pnl = defaultdict(float)
-    has_prices = bool(prices)
-
-    if has_prices:
-        total_pnl = 0.0
-        for pos in TradePosition.query.all():
-            if pos.data.get('Realised__c') == 'Realised':
-                continue
-            key = build_contract_key(pos.data)
-            mkt = prices.get(key)
-            is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
-            if mkt is None and is_option:
-                mkt = 0
-            trade_price = pos.data.get('Price__c')
-            long_ = pos.data.get('Long__c') or 0
-            short_ = pos.data.get('Short__c') or 0
-            mult = LOT_MULTIPLIERS.get(pos.data.get('Commodity_Name__c', ''))
-            if mkt is not None and trade_price is not None and mult:
-                pnl = (mkt - trade_price) * (long_ + short_) * mult
-                total_pnl += pnl
-                book = pos.data.get('Book__c') or None
-                if book:
-                    book_pnl[book] += pnl
+    # Compute physical totals once; share with pnl_summary and exposure
+    try:
+        physical_totals = compute_all_pnl_totals(price_source)
+    except Exception:
+        physical_totals = None
 
     try:
-        pnl_summary = compute_pnl_summary(price_source)
+        pnl_summary = compute_pnl_summary(price_source, physical_totals=physical_totals)
     except Exception:
         pnl_summary = None
 
     try:
-        exposure = compute_exposure(price_source)
+        exposure = compute_exposure(price_source, physical_totals=physical_totals)
     except Exception:
         exposure = None
 
@@ -156,8 +132,6 @@ def index():
         "dashboard.html",
         total_positions=total_positions,
         last_sync=last_sync,
-        total_pnl=total_pnl,
-        book_pnl=sorted(book_pnl.items(), key=lambda x: x[1]),
         last_price_update=last_price_update,
         latest_trade_date=latest_trade_date,
         pnl_summary=pnl_summary,

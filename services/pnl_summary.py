@@ -6,6 +6,7 @@ from models.db import TradePosition, MarketPrice, FFATrade, FFASettlement
 from routes.positions import build_contract_key, LOT_MULTIPLIERS as _MULTIPLIERS
 from services.physical_pnl import compute_all_pnl_totals
 from services.price_source import load_price_map, resolve_delta
+from services.request_cache import get_all_positions, get_all_market_prices
 
 
 def _load_settlement_prices(source='sett1'):
@@ -28,7 +29,7 @@ def _compute_alpha_pnl(settlement_prices):
     """
     alpha_m2m = None
     alpha_pnl = None
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if d.get("Book__c") != "Spec":
             continue
@@ -67,7 +68,7 @@ def _compute_ffa_m2m():
     return total
 
 
-def compute_pnl_summary(source='sett1'):
+def compute_pnl_summary(source='sett1', physical_totals=None):
     """Return dict with all P&L summary values for the dashboard.
 
     Any value may be None if data is missing (Excel not found, prices not loaded, etc.).
@@ -75,13 +76,18 @@ def compute_pnl_summary(source='sett1'):
 
     ``source`` selects sett-1 (default) or live prices, with silent
     fallback to sett-1 for any contract whose live value is missing.
+
+    Pass ``physical_totals`` (the return value of ``compute_all_pnl_totals``) to
+    avoid recomputing it when the caller already has it.
     """
     settlement_prices = _load_settlement_prices(source)
 
     alpha_m2m, alpha_pnl = _compute_alpha_pnl(settlement_prices)
     net_alpha = _safe_sum(alpha_m2m, alpha_pnl)
 
-    raws_physical, whites_physical, raws_futures, whites_futures, _, _ = compute_all_pnl_totals(source)
+    if physical_totals is None:
+        physical_totals = compute_all_pnl_totals(source)
+    raws_physical, whites_physical, raws_futures, whites_futures, _, _ = physical_totals
 
     whites_pnl = _safe_sum(whites_physical, whites_futures)
     ffa_m2m = _compute_ffa_m2m()
@@ -107,7 +113,7 @@ def compute_pnl_summary(source='sett1'):
 def _compute_alpha_position(market, source='sett1'):
     """Return total delta-adjusted position for all Book=Spec positions."""
     total = None
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if d.get("Book__c") != "Spec":
             continue
@@ -133,7 +139,7 @@ def _compute_spread_position(market, source='sett1'):
     Far leg: contributes delta × lots.
     """
     total = None
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if d.get("Book__c") != "Spec":
             continue
@@ -165,16 +171,21 @@ def _compute_spread_position(market, source='sett1'):
     return total
 
 
-def compute_exposure(source='sett1'):
+def compute_exposure(source='sett1', physical_totals=None):
     """Return dict with exposure values for the dashboard exposure table.
 
     Keys: alpha, raws, whites, spread, total.
     Any value may be None if data is missing.
 
     ``source`` selects sett-1 (default) or live deltas with fallback.
+
+    Pass ``physical_totals`` (the return value of ``compute_all_pnl_totals``) to
+    avoid recomputing it when the caller already has it.
     """
-    _, _, _, _, raws_exposure, whites_exposure = compute_all_pnl_totals(source)
-    market = {mp.contract: mp for mp in MarketPrice.query.all()}
+    if physical_totals is None:
+        physical_totals = compute_all_pnl_totals(source)
+    _, _, _, _, raws_exposure, whites_exposure = physical_totals
+    market = {mp.contract: mp for mp in get_all_market_prices()}
     alpha = _compute_alpha_position(market, source)
     spread = _compute_spread_position(market, source)
     return {

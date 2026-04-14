@@ -4,6 +4,7 @@ import openpyxl
 from pathlib import Path
 from models.db import db, MarketPrice, TradePosition, PhysicalDeal
 from routes.positions import build_contract_key, LOT_MULTIPLIERS as _MULTIPLIERS
+from services.request_cache import get_all_positions, get_all_market_prices
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ def _load_trade_maps(book='Raws'):
         sales_pol_hedges:     {contract_xl (AGS…) → net lots}  (Pol trades only)
         options_delta:        {contract_xl (AGP… or AGS…) → delta-adjusted position}  (Options trades)
     """
-    market = {mp.contract.replace(' ', '').upper(): mp for mp in MarketPrice.query.all()}
+    market = {mp.contract.replace(' ', '').upper(): mp for mp in get_all_market_prices()}
     purchase_hedges = {}
     sales_hedges = {}
     purchase_price_total = {}
@@ -227,7 +228,7 @@ def _load_trade_maps(book='Raws'):
     sales_pol_hedges = {}
     options_delta = {}
     spread_price_total = {}
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if (pos.book_parsed or '').strip() != book or not pos.contract_xl:
             continue
@@ -288,7 +289,7 @@ def _load_spreads_map(book='Raws', source='sett1'):
     from services.price_source import load_delta_map
     delta_by_key, _ = load_delta_map(source)
     result = {}
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if (pos.book_parsed or '').strip() != book or d.get('Trade_Code__c') == 'Pol' or not pos.contract_xl:
             continue
@@ -326,7 +327,7 @@ def _load_whites_spread_maps(source='sett1'):
     spreads_map = {}
     spread_price_map = {}
     futures_price_total = {}
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if (pos.book_parsed or '').strip() != 'Whites' or not pos.contract_xl:
             continue
@@ -367,7 +368,7 @@ def _load_futures_pnl_map(settlement_prices, book='Raws'):
     Used to compute Futures PNL on the Raws page by summing AGP and AGS contract_xl buckets.
     """
     result = {}
-    for pos in TradePosition.query.all():
+    for pos in get_all_positions():
         d = pos.data
         if (pos.book_parsed or '').strip() != book or not pos.contract_xl:
             continue

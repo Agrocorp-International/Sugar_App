@@ -4,6 +4,7 @@ from sqlalchemy import cast, Date
 from models.db import TradePosition, MarketPrice
 from routes.positions import build_contract_key, LOT_MULTIPLIERS
 from services.price_source import get_price_source, resolve_price, resolve_delta
+from services.request_cache import get_all_positions, get_all_market_prices
 
 summary_bp = Blueprint("summary", __name__)
 
@@ -23,7 +24,7 @@ def _pos_pnl_change(mkt, mkt2, mult, ls, trade_price, commission, trade_date, la
 def index():
     price_source = get_price_source()
 
-    market = {mp.contract: mp for mp in MarketPrice.query.all()}
+    market = {mp.contract: mp for mp in get_all_market_prices()}
     prices = {k: resolve_price(mp, price_source) for k, mp in market.items()}
     prices2 = {k: mp.settlement2 for k, mp in market.items()}
     _latest = TradePosition.query.order_by(
@@ -31,7 +32,7 @@ def index():
     ).first()
     latest_date = _latest.data.get("Trade_Date__c") if _latest else None
 
-    all_positions = TradePosition.query.all()
+    all_positions = get_all_positions()
 
     # Collect unique filter options
     books = sorted({pos.data.get('Book__c') or '' for pos in all_positions} - {''})

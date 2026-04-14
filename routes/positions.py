@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, jsonify, redirect, url_fo
 from routes.strategy_warnings import get_warning_groups
 from sqlalchemy import cast, Date
 from models.db import db, TradePosition, MarketPrice
+from services.request_cache import get_all_market_prices
 
 positions_bp = Blueprint("positions", __name__)
 
@@ -42,7 +43,7 @@ def compute_maps(positions, source='sett1'):
     prices but the dict name still says settlement.
     """
     from services.price_source import resolve_price, resolve_delta
-    market = {mp.contract: mp for mp in MarketPrice.query.all()}
+    market = {mp.contract: mp for mp in get_all_market_prices()}
     _latest = TradePosition.query.order_by(
         cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
     ).first()

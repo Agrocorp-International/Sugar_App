@@ -15,13 +15,14 @@ from services.tradestation import (
 from routes.info import _workday, _HOLIDAY_DATES, _parse_futures, _RAW_FUTURES
 from routes.positions import build_contract_key, LOT_MULTIPLIERS_BY_PREFIX as _MULTIPLIERS
 from services.iv_utils import calculate_scenario_iv
+from services.request_cache import get_all_positions
 
 options_bp = Blueprint("options", __name__)
 
 
 def _spec_options_query():
     """Return all unrealised Spec positions (options + futures)."""
-    all_pos = TradePosition.query.all()
+    all_pos = get_all_positions()
     return [
         p for p in all_pos
         if p.data.get('Book__c') == 'Spec'
@@ -539,7 +540,7 @@ def payoff():
 def _all_unrealised():
     """Return all unrealised positions (both Hedge and Spec books)."""
     return [
-        p for p in TradePosition.query.all()
+        p for p in get_all_positions()
         if p.data.get('Realised__c') == 'Unrealised'
     ]
 
