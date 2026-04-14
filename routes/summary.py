@@ -47,6 +47,8 @@ def index():
     selected_tradecode_trader = request.args.get('tradecode_trader', '')
     selected_book_spread = request.args.get('book_spread', '')
     selected_status_spread = request.args.get('status_spread', '')
+    selected_book_openst1 = request.args.get('book_openst1', '')
+    selected_tradecode_openst1 = request.args.get('tradecode_openst1', '')
     active_tab = request.args.get('tab', 'contract')
 
     # ── By Contract ──────────────────────────────────────────────────────
@@ -442,6 +444,9 @@ def index():
     sprd_commission = defaultdict(float)
     sprd_delta = {}
     sprd_spread_pos = defaultdict(lambda: None)
+    sprd_price_x_lots = defaultdict(float)
+    sprd_abs_lots = defaultdict(float)
+    sprd_sett_x_lots = defaultdict(float)
 
     for pos in all_positions:
         if selected_book_spread and pos.data.get('Book__c') != selected_book_spread:
@@ -480,6 +485,12 @@ def index():
         if mkt is None and is_option:
             mkt = 0
         trade_price = pos.data.get('Price__c')
+        if trade_price is not None:
+            sprd_price_x_lots[skey] += trade_price * abs(ls)
+            sprd_abs_lots[skey] += abs(ls)
+        sett_px = prices.get(contract_key)
+        if sett_px is not None:
+            sprd_sett_x_lots[skey] += sett_px * abs(ls)
         mult = LOT_MULTIPLIERS.get(pos.data.get('Commodity_Name__c', ''))
         if mkt is not None and trade_price is not None and mult:
             sprd_pnl[skey] = (sprd_pnl[skey] or 0) + (mkt - trade_price) * ls * mult
@@ -510,6 +521,9 @@ def index():
     spread_data = {}
     for skey in sorted(sprd_lots.keys()):
         tc, ti, gr, sp = skey
+        abs_l = sprd_abs_lots[skey]
+        avg_price = (sprd_price_x_lots[skey] / abs_l) if abs_l else 0
+        avg_sett = (sprd_sett_x_lots[skey] / abs_l) if abs_l else 0
         spread_data.setdefault(tc, {}).setdefault(ti, {}).setdefault(gr, []).append({
             'spread': sp,
             'net_lots': sprd_lots[skey],
@@ -518,6 +532,11 @@ def index():
             'pnl_change': sprd_pnl_change[skey],
             'commission': sprd_commission[skey],
             'spread_pos': sprd_spread_pos.get(skey),
+            'trade_price': avg_price,
+            'settlement': avg_sett,
+            '_pxl': sprd_price_x_lots[skey],
+            '_sxl': sprd_sett_x_lots[skey],
+            '_abs': abs_l,
         })
 
     spread_rows = []
@@ -569,6 +588,146 @@ def index():
                 for row in spreads:
                     spread_rows.append({'level': 3, **row})
 
+    # ── Open ST1 Pivot ───────────────────────────────────────────────────
+    # 5-level drill-down: Realised__c → Trader → Trade ID → Trade Group → Contract
+    o_lots = defaultdict(int)
+    o_pnl = defaultdict(lambda: None)
+    o_pnl_change = defaultdict(lambda: None)
+    o_commission = defaultdict(float)
+    o_delta = {}
+    o_price_x_lots = defaultdict(float)
+    o_abs_lots = defaultdict(float)
+    o_settlement = {}
+
+    for pos in all_positions:
+        if selected_book_openst1 and pos.data.get('Book__c') != selected_book_openst1:
+            continue
+        if selected_tradecode_openst1 and pos.data.get('Trade_Code__c') != selected_tradecode_openst1:
+            continue
+
+        contract_key = build_contract_key(pos.data)
+        if not contract_key:
+            continue
+        realised = pos.data.get('Realised__c') or ''
+        trader = pos.data.get('Trader__c') or ''
+        trade_id = pos.data.get('Trade_Key__c') or ''
+        group = pos.data.get('Trade_Group__c') or ''
+        okey = (realised, trader, trade_id, group, contract_key)
+
+        long_ = pos.data.get('Long__c') or 0
+        short_ = pos.data.get('Short__c') or 0
+        ls = long_ + short_
+        o_lots[okey] += ls
+        commission = pos.data.get('Broker_Commission__c') or 0
+        o_commission[okey] += commission
+        is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
+        if okey not in o_delta:
+            if contract_key in market and market[contract_key].delta is not None:
+                o_delta[okey] = market[contract_key].delta
+            elif is_option:
+                o_delta[okey] = 0
+            else:
+                o_delta[okey] = 1.0
+
+        mkt = prices.get(contract_key)
+        mkt2 = prices2.get(contract_key)
+        if mkt is None and is_option:
+            mkt = 0
+        trade_price = pos.data.get('Price__c')
+        if trade_price is not None:
+            o_price_x_lots[okey] += trade_price * abs(ls)
+            o_abs_lots[okey] += abs(ls)
+        if okey not in o_settlement:
+            o_settlement[okey] = prices.get(contract_key)
+        mult = LOT_MULTIPLIERS.get(pos.data.get('Commodity_Name__c', ''))
+        if mkt is not None and trade_price is not None and mult:
+            o_pnl[okey] = (o_pnl[okey] or 0) + (mkt - trade_price) * ls * mult
+        pnl_ch = _pos_pnl_change(mkt, mkt2, mult, ls, trade_price, commission, pos.data.get('Trade_Date__c'), latest_date)
+        if pnl_ch is not None:
+            o_pnl_change[okey] = (o_pnl_change[okey] or 0) + pnl_ch
+
+    def _wavg_o(pxl, abs_l):
+        return pxl / abs_l if abs_l else 0
+
+    openst1_data = {}
+    for okey in sorted(o_lots.keys()):
+        rl, tr, ti, gr, ck = okey
+        net = o_lots[okey]
+        avg_price = (o_price_x_lots[okey] / o_abs_lots[okey]) if (o_abs_lots[okey] and net != 0) else 0
+        sett = (o_settlement.get(okey) or 0) if net != 0 else 0
+        openst1_data.setdefault(rl, {}).setdefault(tr, {}).setdefault(ti, {}).setdefault(gr, []).append({
+            'contract': ck,
+            'net_lots': net,
+            'delta': o_delta.get(okey),
+            'trade_price': avg_price,
+            'settlement': sett,
+            'pnl': o_pnl[okey],
+            'pnl_change': o_pnl_change[okey],
+            'commission': o_commission[okey],
+            '_pxl': o_price_x_lots[okey],
+            '_sxl': (o_settlement.get(okey) or 0) * o_abs_lots[okey],
+            '_abs': o_abs_lots[okey],
+        })
+
+    def _agg_init():
+        return {'lots': 0, 'pnl': None, 'pnl_change': None, 'commission': 0, 'pos': None,
+                'pxl': 0, 'sxl': 0, 'abs': 0}
+
+    def _agg_add(a, row):
+        a['lots'] += row['net_lots']
+        a['commission'] += row['commission']
+        a['pxl'] += row['_pxl']; a['sxl'] += row['_sxl']; a['abs'] += row['_abs']
+        if row['pnl'] is not None:
+            a['pnl'] = (a['pnl'] or 0) + row['pnl']
+        if row['pnl_change'] is not None:
+            a['pnl_change'] = (a['pnl_change'] or 0) + row['pnl_change']
+        if row['delta'] is not None:
+            a['pos'] = (a['pos'] or 0) + row['delta'] * row['net_lots']
+
+    def _agg_row(level, label, a):
+        return {'level': level, 'label': label,
+                'net_lots': a['lots'], 'pnl': a['pnl'], 'pnl_change': a['pnl_change'],
+                'commission': a['commission'], 'position': a['pos'],
+                'trade_price': _wavg_o(a['pxl'], a['abs']),
+                'settlement': _wavg_o(a['sxl'], a['abs'])}
+
+    openst1_rows = []
+    for rl, tr_map in openst1_data.items():
+        l0 = _agg_init()
+        for tr, ti_map in tr_map.items():
+            for ti, gr_map in ti_map.items():
+                for gr, contracts in gr_map.items():
+                    for row in contracts:
+                        _agg_add(l0, row)
+        openst1_rows.append(_agg_row(0, rl or '—', l0))
+        for tr, ti_map in tr_map.items():
+            l1 = _agg_init()
+            for ti, gr_map in ti_map.items():
+                for gr, contracts in gr_map.items():
+                    for row in contracts:
+                        _agg_add(l1, row)
+            openst1_rows.append(_agg_row(1, tr or '—', l1))
+            for ti, gr_map in ti_map.items():
+                l2 = _agg_init()
+                for gr, contracts in gr_map.items():
+                    for row in contracts:
+                        _agg_add(l2, row)
+                openst1_rows.append(_agg_row(2, ti or '—', l2))
+                for gr, contracts in gr_map.items():
+                    l3 = _agg_init()
+                    for row in contracts:
+                        _agg_add(l3, row)
+                    openst1_rows.append(_agg_row(3, gr or '—', l3))
+                    for row in contracts:
+                        openst1_rows.append({'level': 4, **row})
+
+    openst1_total_lots = sum(r['net_lots'] for r in openst1_rows if r['level'] == 4)
+    openst1_total_pnl = sum(r['pnl'] for r in openst1_rows if r['level'] == 4 and r['pnl'] is not None) or None
+    openst1_total_pnl_change = sum(r['pnl_change'] for r in openst1_rows if r['level'] == 4 and r['pnl_change'] is not None) or None
+    openst1_total_commission = sum(r['commission'] for r in openst1_rows if r['level'] == 4)
+    openst1_has_delta = any(r['delta'] is not None for r in openst1_rows if r['level'] == 4)
+    openst1_total_pos = sum(r['delta'] * r['net_lots'] for r in openst1_rows if r['level'] == 4 and r['delta'] is not None) if openst1_has_delta else None
+
     spread_total_pnl = sum(r['pnl'] for r in spread_rows if r['level'] == 3 and r['pnl'] is not None) or None
     spread_total_pnl_change = sum(r['pnl_change'] for r in spread_rows if r['level'] == 3 and r['pnl_change'] is not None) or None
     spread_total_commission = sum(r['commission'] for r in spread_rows if r['level'] == 3)
@@ -614,5 +773,13 @@ def index():
                            selected_book_trader=selected_book_trader,
                            selected_status_trader=selected_status_trader,
                            selected_tradecode_trader=selected_tradecode_trader,
+                           openst1_rows=openst1_rows,
+                           openst1_total_lots=openst1_total_lots,
+                           openst1_total_pnl=openst1_total_pnl,
+                           openst1_total_pnl_change=openst1_total_pnl_change,
+                           openst1_total_commission=openst1_total_commission,
+                           openst1_total_pos=openst1_total_pos,
+                           selected_book_openst1=selected_book_openst1,
+                           selected_tradecode_openst1=selected_tradecode_openst1,
                            active_tab=active_tab,
                            price_source=price_source)
