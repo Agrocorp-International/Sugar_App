@@ -1,0 +1,967 @@
+{% extends "base.html" %}
+{% block title %}Summary - Sugar Trading{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Trading Dashboard Table ────────────────────────────────────── */
+  .excel-table {
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 0.85rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    width: auto;
+    white-space: nowrap;
+  }
+  .excel-table th {
+    background-color: #1a1a2e;
+    color: #c8ccd4;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0;
+    border: none;
+    border-bottom: 2px solid #2d2d44;
+    padding: 10px 16px;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  .excel-table td {
+    font-weight: 400;
+    border: none;
+    border-bottom: 1px solid #e8ecf1;
+    padding: 7px 16px;
+    line-height: 1.6;
+    transition: background-color 0.15s ease;
+  }
+
+  /* ── Hierarchy levels ───────────────────────────────────────────── */
+  .excel-row-l0 > td {
+    background-color: #f0f4f8; font-weight: 700;
+    color: #1a1a2e; border-bottom: 2px solid #cbd5e1;
+  }
+  .excel-row-l0-sep > td {
+    background-color: #f0f4f8; font-weight: 700;
+    color: #1a1a2e; border-top: 3px solid #94a3b8; border-bottom: 2px solid #cbd5e1;
+  }
+  .excel-row-l1 > td {
+    background-color: #f8fafc; font-weight: 600;
+    color: #334155; border-bottom: 1px solid #e2e8f0;
+  }
+  .excel-row-l2 > td {
+    background-color: #ffffff; font-weight: 500;
+    color: #64748b; border-bottom: 1px solid #f1f5f9;
+  }
+  .excel-row-l3 > td { background-color: #ffffff; color: #475569; }
+  .excel-row-l3:nth-child(even) > td { background-color: #fafbfd; }
+
+  /* ── Footer total row ───────────────────────────────────────────── */
+  .excel-table tfoot > tr > td {
+    background-color: #1a1a2e; color: #e2e8f0; font-weight: 700;
+    border-top: 2px solid #3b82f6; border-bottom: none;
+    padding: 10px 16px;
+  }
+  .excel-table tfoot .pnl-positive { color: #4ade80 !important; background-color: #1a1a2e !important; }
+  .excel-table tfoot .pnl-negative { color: #f87171 !important; background-color: #1a1a2e !important; }
+  .excel-table tfoot .pnl-neutral  { color: #e2e8f0 !important; background-color: #1a1a2e !important; }
+
+  /* ── Tabular numbers ────────────────────────────────────────────── */
+  .excel-table td.text-end {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── PnL hero styling ──────────────────────────────────────────── */
+  .pnl-cell { font-weight: 700; }
+  .pnl-positive { color: #16a34a !important; }
+  .pnl-negative { color: #dc2626 !important; }
+  .pnl-neutral  { color: #64748b !important; }
+  /* ── Tree indentation + lines ───────────────────────────────────── */
+  .tree-indent-1 { padding-left: 28px !important; }
+  .tree-indent-2 { padding-left: 48px !important; }
+  .tree-indent-3 { padding-left: 68px !important; }
+  .excel-row-l1 > td:first-child { border-left: 3px solid #cbd5e1; }
+  .excel-row-l2 > td:first-child { border-left: 3px solid #e2e8f0; }
+  .excel-row-l3 > td:first-child { border-left: 3px solid #f1f5f9; }
+
+  /* ── Filter bar (matches positions page) ─────────────────────────── */
+  .filter-bar {
+    background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 8px 12px; display: flex; align-items: center;
+    flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+  }
+  .filter-bar label {
+    font-size: 12px; font-weight: 600; color: #6b7280;
+    margin-bottom: 0; margin-right: 2px;
+  }
+  .filter-ctrl {
+    height: 30px; font-size: 12px; border: 1px solid #d1d5db;
+    border-radius: 4px; padding: 2px 8px; background: #fff;
+    color: #374151; outline: none; min-width: 0;
+  }
+  .filter-ctrl:focus {
+    border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1);
+  }
+  select.filter-ctrl { padding-right: 24px; cursor: pointer; width: auto; min-width: 80px; max-width: 200px; }
+  .filter-apply {
+    height: 30px; font-size: 12px; font-weight: 600; background: #2563eb;
+    color: #fff; border: none; border-radius: 4px; padding: 0 14px; cursor: pointer;
+  }
+  .filter-apply:hover { background: #1d4ed8; }
+  .filter-clear {
+    height: 30px; font-size: 12px; font-weight: 500; background: none;
+    color: #6b7280; border: 1px solid #d1d5db; border-radius: 4px;
+    padding: 0 10px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center;
+  }
+  .filter-clear:hover { background: #f3f4f6; color: #374151; }
+
+  /* ── Expand controls ────────────────────────────────────────────── */
+  .expand-controls {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 0;
+  }
+  .expand-controls .btn {
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500;
+    border: 1px solid #cbd5e1; background: #fff; color: #475569; transition: all 0.15s;
+  }
+  .expand-controls .btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+
+  /* ── Table wrapper (sticky header + scroll) ─────────────────────── */
+  .excel-table-wrapper {
+    overflow-x: auto; overflow-y: auto; max-height: 80vh;
+    border-radius: 8px; border: 1px solid #e2e8f0;
+  }
+
+  /* ── Hover + micro-interactions ─────────────────────────────────── */
+  .excel-table tbody tr:hover > td { background-color: #eef2ff !important; }
+  .collapse-header:active > td { background-color: #dbeafe !important; }
+  .excel-table tbody tr { transition: opacity 0.2s ease, transform 0.2s ease; }
+  .row-chevron {
+    transition: transform 0.2s ease; display: inline-block;
+  }
+
+  /* ── Column header tooltips ─────────────────────────────────────── */
+  .excel-table th[title],
+  #tab-contract .table th[title] { cursor: help; }
+
+  /* ── By Contract tab — harmonize ────────────────────────────────── */
+  #tab-contract .table {
+    font-size: 0.85rem; border-collapse: separate; border-spacing: 0;
+  }
+  #tab-contract .table thead.table-dark th {
+    background-color: #1a1a2e !important; color: #c8ccd4;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0; border: none; border-bottom: 2px solid #2d2d44;
+    padding: 10px 16px; position: sticky; top: 0; z-index: 2;
+  }
+  #tab-contract .table td {
+    border: none; border-bottom: 1px solid #e8ecf1; padding: 7px 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  #tab-contract .table .text-end {
+    font-variant-numeric: tabular-nums;
+  }
+  #tab-contract .table tfoot.table-secondary td {
+    background-color: #1a1a2e !important; color: #e2e8f0 !important;
+    font-weight: 700; border-top: 2px solid #3b82f6; border-bottom: none; padding: 10px 16px;
+  }
+  #tab-contract .table tfoot.table-secondary td.pnl-positive { color: #4ade80 !important; background-color: #1a1a2e !important; }
+  #tab-contract .table tfoot.table-secondary td.pnl-negative { color: #f87171 !important; background-color: #1a1a2e !important; }
+  #tab-contract .table tfoot.table-secondary td.pnl-neutral  { color: #e2e8f0 !important; background-color: #1a1a2e !important; }
+  #tab-contract .table tbody tr:hover td { background-color: #eef2ff !important; }
+  #tab-contract .table td.pnl-positive { color: #16a34a !important; }
+  #tab-contract .table td.pnl-negative { color: #dc2626 !important; }
+  #tab-contract .table td.pnl-neutral  { color: #64748b !important; }
+  #tab-contract .table td.pnl-cell { font-weight: 700; }
+
+  /* ── By Contract / By Spread Contract cards side-by-side ────────── */
+  #tab-contract .card {
+    border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0">Position Summary</h4>
+</div>
+
+<div class="tab-switcher" id="summarySwitcher">
+  <button class="tab-sw-btn {% if active_tab not in ['pivot', 'trader', 'spread'] %}active{% endif %}" id="tab-contract-btn" data-target="#tab-contract" type="button">
+    <i class="bi bi-file-earmark-text"></i>By Contract
+    {% if summary %}<span class="tab-badge">{{ summary|length }}</span>{% endif %}
+  </button>
+  <button class="tab-sw-btn {% if active_tab == 'pivot' %}active{% endif %}" id="tab-pivot-btn" data-target="#tab-pivot" type="button">
+    <i class="bi bi-tag"></i>By Trade Code
+  </button>
+  <button class="tab-sw-btn {% if active_tab == 'trader' %}active{% endif %}" id="tab-trader-btn" data-target="#tab-trader" type="button">
+    <i class="bi bi-person"></i>By Trader
+  </button>
+  <button class="tab-sw-btn {% if active_tab == 'spread' %}active{% endif %}" id="tab-spread-btn" data-target="#tab-spread" type="button">
+    <i class="bi bi-arrow-left-right"></i>By Spread
+  </button>
+</div>
+
+<script>
+// Manual tab switching for summary page
+document.addEventListener('DOMContentLoaded', function() {
+  const switcher = document.getElementById('summarySwitcher');
+  const buttons  = switcher.querySelectorAll('.tab-sw-btn');
+  const panes    = document.querySelectorAll('#summaryTabContent > .tab-pane');
+
+  function activateTab(btn) {
+    const target = btn.getAttribute('data-target');
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    panes.forEach(p => p.classList.remove('show', 'active'));
+    const pane = document.querySelector(target);
+    if (pane) requestAnimationFrame(() => pane.classList.add('active', 'show'));
+    // Persist active tab in URL so refresh stays on the same tab
+    const tabName = target.replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', tabName);
+    history.replaceState(null, '', url);
+  }
+
+  buttons.forEach(btn => btn.addEventListener('click', () => activateTab(btn)));
+});
+</script>
+
+<div class="tab-content p-3 mb-4" id="summaryTabContent">
+
+  <!-- ── By Contract ──────────────────────────────────────────────── -->
+  <div class="tab-pane {% if active_tab not in ['pivot', 'trader', 'spread'] %}show active{% endif %}" id="tab-contract" role="tabpanel">
+    <form method="GET" class="mb-3">
+      <input type="hidden" name="tab" value="contract">
+      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
+      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
+      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
+      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
+      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
+      <div class="filter-bar">
+        <label>Book</label>
+        <select name="book" class="filter-ctrl">
+          <option value="">All Books</option>
+          {% for b in books %}
+            <option value="{{ b }}" {% if b == selected_book %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <label>Status</label>
+        <select name="status" class="filter-ctrl">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+            <option value="{{ s }}" {% if s == selected_status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="filter-apply">Filter</button>
+        {% if selected_book or selected_status %}
+          <a href="{{ url_for('summary.index') }}?tab=contract&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}" class="filter-clear">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+    {% if summary %}
+    <div class="d-flex gap-4 align-items-start flex-wrap">
+      <!-- By Contract table -->
+      <div class="card d-inline-block">
+        <table class="table table-hover table-sm mb-0" style="width: auto;">
+          <thead class="table-dark">
+            <tr>
+              <th>Contract</th>
+              <th class="text-end" title="Net long or short lots">Long/Short</th>
+              <th class="text-end" title="Delta-adjusted position">Position</th>
+              <th class="text-end" title="PnL net of commissions">Net PnL</th>
+              <th class="text-end" title="Change since last price update">PnL Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in summary %}
+              <tr>
+                <td class="fw-semibold">{{ row.contract|format_contract }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.delta is not none %}
+                  <td class="text-end">{{ "%.1f"|format(row.delta * row.net_lots) }}</td>
+                {% else %}
+                  <td class="text-end text-muted">—</td>
+                {% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                    ${{ "{:,.0f}".format(net_pnl) }}
+                  </td>
+                {% else %}
+                  <td class="text-end text-muted">—</td>
+                {% endif %}
+                {% if row.pnl_change is not none %}
+                  <td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                    ${{ "{:,.0f}".format(row.pnl_change) }}
+                  </td>
+                {% else %}
+                  <td class="text-end text-muted">—</td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-secondary fw-semibold">
+            <tr>
+              <td>Total</td>
+              <td class="text-end">{{ summary|sum(attribute='net_lots') }}</td>
+              {% set total_pos = namespace(value=0, has_any=false) %}
+              {% for row in summary %}
+                {% if row.delta is not none %}
+                  {% set total_pos.value = total_pos.value + row.delta * row.net_lots %}
+                  {% set total_pos.has_any = true %}
+                {% endif %}
+              {% endfor %}
+              {% if total_pos.has_any %}
+                <td class="text-end">{{ "%.1f"|format(total_pos.value) }}</td>
+              {% else %}
+                <td class="text-end text-muted">—</td>
+              {% endif %}
+              {% set total_pnl = namespace(value=0, has_any=false) %}
+              {% for row in summary %}
+                {% if row.pnl is not none %}
+                  {% set total_pnl.value = total_pnl.value + row.pnl %}
+                  {% set total_pnl.has_any = true %}
+                {% endif %}
+              {% endfor %}
+              {% if total_pnl.has_any %}
+                {% set total_net_pnl = total_pnl.value + summary|sum(attribute='commission') %}
+                <td class="text-end pnl-cell {% if total_net_pnl > 0 %}pnl-positive{% elif total_net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                  ${{ "{:,.0f}".format(total_net_pnl) }}
+                </td>
+              {% else %}
+                <td class="text-end text-muted">—</td>
+              {% endif %}
+              {% set total_pnl_change = namespace(value=0, has_any=false) %}
+              {% for row in summary %}
+                {% if row.pnl_change is not none %}
+                  {% set total_pnl_change.value = total_pnl_change.value + row.pnl_change %}
+                  {% set total_pnl_change.has_any = true %}
+                {% endif %}
+              {% endfor %}
+              {% if total_pnl_change.has_any %}
+                <td class="text-end pnl-cell {% if total_pnl_change.value > 0 %}pnl-positive{% elif total_pnl_change.value < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                  ${{ "{:,.0f}".format(total_pnl_change.value) }}
+                </td>
+              {% else %}
+                <td class="text-end text-muted">—</td>
+              {% endif %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- By Spread Contract table -->
+      {% if strategy_summary %}
+      <div class="card d-inline-block">
+        <table class="table table-hover table-sm mb-0" style="width: auto;">
+          <thead class="table-dark">
+            <tr>
+              <th>Spread Contract</th>
+              <th class="text-end" title="Spread position in lots">Spread Position</th>
+              <th class="text-end" title="PnL net of commissions">Net PnL</th>
+              <th class="text-end" title="Change since last price update">PnL Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in strategy_summary %}
+              <tr>
+                <td class="fw-semibold">{{ row.strategy }}</td>
+                {% if row.spread_pos is not none %}
+                  <td class="text-end">{{ "%.1f"|format(row.spread_pos) }}</td>
+                {% else %}
+                  <td class="text-end text-muted">—</td>
+                {% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                    ${{ "{:,.0f}".format(net_pnl) }}
+                  </td>
+                {% else %}
+                  <td class="text-end text-muted">—</td>
+                {% endif %}
+                {% if row.pnl_change is not none %}
+                  <td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                    ${{ "{:,.0f}".format(row.pnl_change) }}
+                  </td>
+                {% else %}
+                  <td class="text-end text-muted">—</td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-secondary fw-semibold">
+            <tr>
+              <td>Total</td>
+              {% if strat_total_spread_pos is not none %}
+                <td class="text-end">{{ "%.1f"|format(strat_total_spread_pos) }}</td>
+              {% else %}
+                <td class="text-end text-muted">—</td>
+              {% endif %}
+              {% if strat_total_pnl is not none %}
+                {% set strat_net = strat_total_pnl + strat_total_commission %}
+                <td class="text-end pnl-cell {% if strat_net > 0 %}pnl-positive{% elif strat_net < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                  ${{ "{:,.0f}".format(strat_net) }}
+                </td>
+              {% else %}
+                <td class="text-end text-muted">—</td>
+              {% endif %}
+              {% if strat_total_pnl_change is not none %}
+                <td class="text-end pnl-cell {% if strat_total_pnl_change > 0 %}pnl-positive{% elif strat_total_pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">
+                  ${{ "{:,.0f}".format(strat_total_pnl_change) }}
+                </td>
+              {% else %}
+                <td class="text-end text-muted">—</td>
+              {% endif %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-inbox fs-1"></i>
+      <p class="mt-2">No trade positions yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── By Trade Code ────────────────────────────────────────────── -->
+  <div class="tab-pane {% if active_tab == 'pivot' %}show active{% endif %}" id="tab-pivot" role="tabpanel">
+    <form method="GET" class="mb-3">
+      <input type="hidden" name="tab" value="pivot">
+      <input type="hidden" name="book" value="{{ selected_book }}">
+      <input type="hidden" name="status" value="{{ selected_status }}">
+      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
+      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
+      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
+      <div class="filter-bar">
+        <label>Book</label>
+        <select name="book_pivot" class="filter-ctrl">
+          <option value="">All Books</option>
+          {% for b in books %}
+            <option value="{{ b }}" {% if b == selected_book_pivot %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <label>Status</label>
+        <select name="status_pivot" class="filter-ctrl">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+            <option value="{{ s }}" {% if s == selected_status_pivot %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="filter-apply">Filter</button>
+        {% if selected_book_pivot or selected_status_pivot %}
+          <a href="{{ url_for('summary.index') }}?tab=pivot&book={{ selected_book }}&status={{ selected_status }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}" class="filter-clear">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+    {% if pivot_rows %}
+    <div class="expand-controls" style="margin-bottom:12px;">
+      <button type="button" class="btn" onclick="collapseAll('pivot-table')" title="Collapse All"><i class="bi bi-dash-square"></i></button>
+      <button type="button" class="btn" onclick="expandToLevel('pivot-table', 1)" title="Level 1">L1</button>
+      <button type="button" class="btn" onclick="expandToLevel('pivot-table', 2)" title="Level 2">L2</button>
+      <button type="button" class="btn" onclick="expandAll('pivot-table')" title="Expand All"><i class="bi bi-plus-square"></i></button>
+    </div>
+    <div class="excel-table-wrapper">
+      <table id="pivot-table" class="excel-table mb-0">
+        <thead>
+          <tr>
+            <th style="min-width:200px;"></th>
+            <th class="text-end" title="Net long or short lots">Long/Short</th>
+            <th class="text-end" title="Delta-adjusted position">Position</th>
+            <th class="text-end" title="PnL net of commissions">Net PnL</th>
+            <th class="text-end" title="Change since last price update">PnL Change</th>
+            <th class="text-end" title="Weighted average trade price">Trade Price</th>
+            <th class="text-end" title="Current settlement price">Settlement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(l0=0, l1=0, l2=0) %}
+          {% for row in pivot_rows %}
+            {% if row.level == 0 %}
+              {% set ns.l0 = ns.l0 + 1 %}{% set ns.l1 = 0 %}{% set ns.l2 = 0 %}
+              <tr class="{% if loop.first %}excel-row-l0{% else %}excel-row-l0-sep{% endif %} collapse-header"
+                  data-gid="p{{ ns.l0 }}" data-level="0" style="cursor:pointer;" title="Click to expand/collapse">
+                <td><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.position is not none %}<td class="text-end">{{ "%.1f"|format(row.position) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                <td></td>
+                <td></td>
+              </tr>
+            {% elif row.level == 1 %}
+              {% set ns.l1 = ns.l1 + 1 %}{% set ns.l2 = 0 %}
+              <tr class="excel-row-l1 collapse-header"
+                  data-gid="p{{ ns.l0 }}-{{ ns.l1 }}" data-parent="p{{ ns.l0 }}" data-level="1" style="cursor:pointer;" title="Click to expand/collapse">
+                <td class="tree-indent-1"><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.position is not none %}<td class="text-end">{{ "%.1f"|format(row.position) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                <td></td>
+                <td></td>
+              </tr>
+            {% elif row.level == 2 %}
+              {% set ns.l2 = ns.l2 + 1 %}
+              <tr class="excel-row-l2 collapse-header"
+                  data-gid="p{{ ns.l0 }}-{{ ns.l1 }}-{{ ns.l2 }}" data-parent="p{{ ns.l0 }}-{{ ns.l1 }}" data-level="2" style="cursor:pointer;" title="Click to expand/collapse">
+                <td class="tree-indent-2"><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.position is not none %}<td class="text-end">{{ "%.1f"|format(row.position) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                <td></td>
+                <td></td>
+              </tr>
+            {% else %}
+              <tr class="excel-row-l3" data-parent="p{{ ns.l0 }}-{{ ns.l1 }}-{{ ns.l2 }}" data-level="3">
+                <td class="tree-indent-3">{{ row.contract|format_contract }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.delta is not none %}<td class="text-end">{{ "%.1f"|format(row.delta * row.net_lots) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                <td class="text-end">{{ "%.2f"|format(row.trade_price) }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.settlement) }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td class="text-end">{{ pivot_total_lots }}</td>
+            {% if pivot_total_pos is not none %}<td class="text-end">{{ "%.1f"|format(pivot_total_pos) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            {% if pivot_total_pnl is not none %}
+              {% set pivot_net = pivot_total_pnl + pivot_total_commission %}
+              <td class="text-end pnl-cell {% if pivot_net > 0 %}pnl-positive{% elif pivot_net < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(pivot_net) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            {% if pivot_total_pnl_change is not none %}<td class="text-end pnl-cell {% if pivot_total_pnl_change > 0 %}pnl-positive{% elif pivot_total_pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(pivot_total_pnl_change) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            <td></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-inbox fs-1"></i>
+      <p class="mt-2">No pivot data available.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── By Trader ─────────────────────────────────────────────────── -->
+  <div class="tab-pane {% if active_tab == 'trader' %}show active{% endif %}" id="tab-trader" role="tabpanel">
+    <form method="GET" class="mb-3">
+      <input type="hidden" name="tab" value="trader">
+      <input type="hidden" name="book" value="{{ selected_book }}">
+      <input type="hidden" name="status" value="{{ selected_status }}">
+      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
+      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
+      <div class="filter-bar">
+        <label>Book</label>
+        <select name="book_trader" class="filter-ctrl">
+          <option value="">All Books</option>
+          {% for b in books %}
+            <option value="{{ b }}" {% if b == selected_book_trader %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <label>Status</label>
+        <select name="status_trader" class="filter-ctrl">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+            <option value="{{ s }}" {% if s == selected_status_trader %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <label>Trade Code</label>
+        <select name="tradecode_trader" class="filter-ctrl">
+          <option value="">All Trade Codes</option>
+          {% for tc in trade_codes %}
+            <option value="{{ tc }}" {% if tc == selected_tradecode_trader %}selected{% endif %}>{{ tc }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="filter-apply">Filter</button>
+        {% if selected_book_trader or selected_status_trader or selected_tradecode_trader %}
+          <a href="{{ url_for('summary.index') }}?tab=trader&book={{ selected_book }}&status={{ selected_status }}&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}" class="filter-clear">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+    {% if trader_rows %}
+    <div class="expand-controls" style="margin-bottom:12px;">
+      <button type="button" class="btn" onclick="collapseAll('trader-table')" title="Collapse All"><i class="bi bi-dash-square"></i></button>
+      <button type="button" class="btn" onclick="expandToLevel('trader-table', 1)" title="Level 1">L1</button>
+      <button type="button" class="btn" onclick="expandToLevel('trader-table', 2)" title="Level 2">L2</button>
+      <button type="button" class="btn" onclick="expandAll('trader-table')" title="Expand All"><i class="bi bi-plus-square"></i></button>
+    </div>
+    <div class="excel-table-wrapper">
+      <table id="trader-table" class="excel-table mb-0">
+        <thead>
+          <tr>
+            <th style="min-width:200px;"></th>
+            <th class="text-end" title="Net long or short lots">Long/Short</th>
+            <th class="text-end" title="Delta-adjusted position">Position</th>
+            <th class="text-end" title="PnL net of commissions">Net PnL</th>
+            <th class="text-end" title="Change since last price update">PnL Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(l0=0, l1=0, l2=0) %}
+          {% for row in trader_rows %}
+            {% if row.level == 0 %}
+              {% set ns.l0 = ns.l0 + 1 %}{% set ns.l1 = 0 %}{% set ns.l2 = 0 %}
+              <tr class="{% if loop.first %}excel-row-l0{% else %}excel-row-l0-sep{% endif %} collapse-header"
+                  data-gid="t{{ ns.l0 }}" data-level="0" style="cursor:pointer;" title="Click to expand/collapse">
+                <td><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.position is not none %}<td class="text-end">{{ "%.1f"|format(row.position) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% elif row.level == 1 %}
+              {% set ns.l1 = ns.l1 + 1 %}{% set ns.l2 = 0 %}
+              <tr class="excel-row-l1 collapse-header"
+                  data-gid="t{{ ns.l0 }}-{{ ns.l1 }}" data-parent="t{{ ns.l0 }}" data-level="1" style="cursor:pointer;" title="Click to expand/collapse">
+                <td class="tree-indent-1"><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.position is not none %}<td class="text-end">{{ "%.1f"|format(row.position) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% elif row.level == 2 %}
+              {% set ns.l2 = ns.l2 + 1 %}
+              <tr class="excel-row-l2 collapse-header"
+                  data-gid="t{{ ns.l0 }}-{{ ns.l1 }}-{{ ns.l2 }}" data-parent="t{{ ns.l0 }}-{{ ns.l1 }}" data-level="2" style="cursor:pointer;" title="Click to expand/collapse">
+                <td class="tree-indent-2"><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.position is not none %}<td class="text-end">{{ "%.1f"|format(row.position) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% else %}
+              <tr class="excel-row-l3" data-parent="t{{ ns.l0 }}-{{ ns.l1 }}-{{ ns.l2 }}" data-level="3">
+                <td class="tree-indent-3">{{ row.contract|format_contract }}</td>
+                <td class="text-end">{{ row.net_lots }}</td>
+                {% if row.delta is not none %}<td class="text-end">{{ "%.1f"|format(row.delta * row.net_lots) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td class="text-end">{{ trader_total_lots }}</td>
+            {% if trader_total_pos is not none %}<td class="text-end">{{ "%.1f"|format(trader_total_pos) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            {% if trader_total_pnl is not none %}
+              {% set trader_net = trader_total_pnl + trader_total_commission %}
+              <td class="text-end pnl-cell {% if trader_net > 0 %}pnl-positive{% elif trader_net < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(trader_net) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            {% if trader_total_pnl_change is not none %}<td class="text-end pnl-cell {% if trader_total_pnl_change > 0 %}pnl-positive{% elif trader_total_pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(trader_total_pnl_change) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-inbox fs-1"></i>
+      <p class="mt-2">No trade positions yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── By Spread ─────────────────────────────────────────────────── -->
+  <div class="tab-pane {% if active_tab == 'spread' %}show active{% endif %}" id="tab-spread" role="tabpanel">
+    <form method="GET" class="mb-3">
+      <input type="hidden" name="tab" value="spread">
+      <input type="hidden" name="book" value="{{ selected_book }}">
+      <input type="hidden" name="status" value="{{ selected_status }}">
+      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
+      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
+      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
+      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
+      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
+      <div class="filter-bar">
+        <label>Book</label>
+        <select name="book_spread" class="filter-ctrl">
+          <option value="">All Books</option>
+          {% for b in books %}
+            <option value="{{ b }}" {% if b == selected_book_spread %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <label>Status</label>
+        <select name="status_spread" class="filter-ctrl">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+            <option value="{{ s }}" {% if s == selected_status_spread %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="filter-apply">Filter</button>
+        {% if selected_book_spread or selected_status_spread %}
+          <a href="{{ url_for('summary.index') }}?tab=spread&book={{ selected_book }}&status={{ selected_status }}&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}" class="filter-clear">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+    {% if spread_rows %}
+    <div class="expand-controls" style="margin-bottom:12px;">
+      <button type="button" class="btn" onclick="collapseAll('spread-table')" title="Collapse All"><i class="bi bi-dash-square"></i></button>
+      <button type="button" class="btn" onclick="expandToLevel('spread-table', 1)" title="Level 1">L1</button>
+      <button type="button" class="btn" onclick="expandToLevel('spread-table', 2)" title="Level 2">L2</button>
+      <button type="button" class="btn" onclick="expandAll('spread-table')" title="Expand All"><i class="bi bi-plus-square"></i></button>
+    </div>
+    <div class="excel-table-wrapper">
+      <table id="spread-table" class="excel-table mb-0">
+        <thead>
+          <tr>
+            <th style="min-width:200px;"></th>
+            <th class="text-end" title="Spread position in lots">Spread Position</th>
+            <th class="text-end" title="PnL net of commissions">Net PnL</th>
+            <th class="text-end" title="Change since last price update">PnL Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(l0=0, l1=0, l2=0) %}
+          {% for row in spread_rows %}
+            {% if row.level == 0 %}
+              {% set ns.l0 = ns.l0 + 1 %}{% set ns.l1 = 0 %}{% set ns.l2 = 0 %}
+              <tr class="{% if loop.first %}excel-row-l0{% else %}excel-row-l0-sep{% endif %} collapse-header"
+                  data-gid="s{{ ns.l0 }}" data-level="0" style="cursor:pointer;" title="Click to expand/collapse">
+                <td><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                {% if row.spread_pos is not none %}<td class="text-end">{{ "%.1f"|format(row.spread_pos) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% elif row.level == 1 %}
+              {% set ns.l1 = ns.l1 + 1 %}{% set ns.l2 = 0 %}
+              <tr class="excel-row-l1 collapse-header"
+                  data-gid="s{{ ns.l0 }}-{{ ns.l1 }}" data-parent="s{{ ns.l0 }}" data-level="1" style="cursor:pointer;" title="Click to expand/collapse">
+                <td class="tree-indent-1"><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                {% if row.spread_pos is not none %}<td class="text-end">{{ "%.1f"|format(row.spread_pos) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% elif row.level == 2 %}
+              {% set ns.l2 = ns.l2 + 1 %}
+              <tr class="excel-row-l2 collapse-header"
+                  data-gid="s{{ ns.l0 }}-{{ ns.l1 }}-{{ ns.l2 }}" data-parent="s{{ ns.l0 }}-{{ ns.l1 }}" data-level="2" style="cursor:pointer;" title="Click to expand/collapse">
+                <td class="tree-indent-2"><i class="bi bi-chevron-down me-1 row-chevron"></i>{{ row.label }}</td>
+                {% if row.spread_pos is not none %}<td class="text-end">{{ "%.1f"|format(row.spread_pos) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% else %}
+              <tr class="excel-row-l3" data-parent="s{{ ns.l0 }}-{{ ns.l1 }}-{{ ns.l2 }}" data-level="3">
+                <td class="tree-indent-3">{{ row.spread or '—' }}</td>
+                {% if row.spread_pos is not none %}<td class="text-end">{{ "%.1f"|format(row.spread_pos) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl is not none %}
+                  {% set net_pnl = row.pnl + row.commission %}
+                  <td class="text-end pnl-cell {% if net_pnl > 0 %}pnl-positive{% elif net_pnl < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(net_pnl) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+                {% if row.pnl_change is not none %}<td class="text-end pnl-cell {% if row.pnl_change > 0 %}pnl-positive{% elif row.pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(row.pnl_change) }}</td>
+                {% else %}<td class="text-end text-muted">—</td>{% endif %}
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            {% if spread_total_spread_pos is not none %}<td class="text-end">{{ "%.1f"|format(spread_total_spread_pos) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            {% if spread_total_pnl is not none %}
+              {% set spread_net = spread_total_pnl + spread_total_commission %}
+              <td class="text-end pnl-cell {% if spread_net > 0 %}pnl-positive{% elif spread_net < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(spread_net) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+            {% if spread_total_pnl_change is not none %}<td class="text-end pnl-cell {% if spread_total_pnl_change > 0 %}pnl-positive{% elif spread_total_pnl_change < 0 %}pnl-negative{% else %}pnl-neutral{% endif %}">${{ "{:,.0f}".format(spread_total_pnl_change) }}</td>
+            {% else %}<td class="text-end text-muted">—</td>{% endif %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-inbox fs-1"></i>
+      <p class="mt-2">No trade positions yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+function getDescendants(table, gid) {
+  return Array.from(table.querySelectorAll('tr[data-parent]')).filter(tr => {
+    const p = tr.dataset.parent;
+    return p === gid || p.startsWith(gid + '-');
+  });
+}
+
+function initCollapsible(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  table.querySelectorAll('tr[data-gid]').forEach(tr => {
+    tr.addEventListener('click', function() {
+      const gid = this.dataset.gid;
+      const directChildren = Array.from(table.querySelectorAll(`tr[data-parent="${gid}"]`));
+      if (directChildren.length === 0) return;
+
+      const isExpanded = directChildren[0].style.display !== 'none';
+      const chevron = this.querySelector('.row-chevron');
+
+      const descendants = getDescendants(table, gid);
+      if (isExpanded) {
+        descendants.forEach(d => { d.style.opacity = '0'; d.style.transform = 'translateY(-4px)'; });
+        setTimeout(() => {
+          descendants.forEach(d => { d.style.display = 'none'; d.style.opacity = ''; d.style.transform = ''; });
+        }, 150);
+        if (chevron) { chevron.classList.remove('bi-chevron-down'); chevron.classList.add('bi-chevron-right'); }
+        // Flip all nested chevrons to collapsed
+        descendants.forEach(d => {
+          const ch = d.querySelector('.row-chevron');
+          if (ch) { ch.classList.remove('bi-chevron-down'); ch.classList.add('bi-chevron-right'); }
+        });
+      } else {
+        // Expand ALL descendants recursively
+        descendants.forEach(d => {
+          d.style.display = '';
+          d.style.opacity = '0'; d.style.transform = 'translateY(-4px)';
+          requestAnimationFrame(() => { d.style.opacity = '1'; d.style.transform = 'translateY(0)'; });
+        });
+        if (chevron) { chevron.classList.remove('bi-chevron-right'); chevron.classList.add('bi-chevron-down'); }
+        // Flip all nested chevrons to expanded
+        descendants.forEach(d => {
+          const ch = d.querySelector('.row-chevron');
+          if (ch) { ch.classList.remove('bi-chevron-right'); ch.classList.add('bi-chevron-down'); }
+        });
+      }
+    });
+  });
+}
+
+function expandToLevel(tableId, maxLevel) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  // Show rows whose level is <= maxLevel, hide those deeper
+  table.querySelectorAll('tr[data-level]').forEach(tr => {
+    const level = parseInt(tr.dataset.level);
+    if (level === 0) return; // always visible
+    tr.style.display = level <= maxLevel ? '' : 'none';
+  });
+  // Update chevrons: header rows at level < maxLevel → down (children shown)
+  //                  header rows at level >= maxLevel → right (children hidden)
+  table.querySelectorAll('tr[data-gid]').forEach(tr => {
+    const level = parseInt(tr.dataset.level);
+    const chevron = tr.querySelector('.row-chevron');
+    if (!chevron) return;
+    if (level < maxLevel) {
+      chevron.classList.remove('bi-chevron-right'); chevron.classList.add('bi-chevron-down');
+    } else {
+      chevron.classList.remove('bi-chevron-down'); chevron.classList.add('bi-chevron-right');
+    }
+  });
+}
+
+function collapseAll(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  table.querySelectorAll('tr[data-parent]').forEach(tr => { tr.style.display = 'none'; });
+  table.querySelectorAll('.row-chevron').forEach(i => {
+    i.classList.remove('bi-chevron-down'); i.classList.add('bi-chevron-right');
+  });
+}
+
+function expandAll(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  table.querySelectorAll('tr[data-parent]').forEach(tr => { tr.style.display = ''; });
+  table.querySelectorAll('.row-chevron').forEach(i => {
+    i.classList.remove('bi-chevron-right'); i.classList.add('bi-chevron-down');
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initCollapsible('pivot-table');
+  initCollapsible('trader-table');
+  initCollapsible('spread-table');
+
+  // Default: show L0 + L1, hide L2+ for a clean initial view
+  expandToLevel('pivot-table', 1);
+  expandToLevel('trader-table', 1);
+  expandToLevel('spread-table', 1);
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.toString() === '') {
+    const saved = localStorage.getItem('summary_filters');
+    if (saved) {
+      const restored = new URLSearchParams(saved);
+      restored.delete('tab');
+      window.location.search = restored.toString();
+      return;
+    }
+  } else {
+    localStorage.setItem('summary_filters', params.toString());
+  }
+});
+</script>
+{% endblock %}

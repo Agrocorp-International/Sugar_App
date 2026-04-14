@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Strategy Warnings - Sugar Trading{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">
+    <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Strategy Field Warnings
+  </h4>
+  <span class="badge bg-warning text-dark fs-6">{{ groups|length }} record(s)</span>
+</div>
+
+{% if groups %}
+<div class="alert alert-warning py-2 mb-3">
+  These trades have an empty or malformed <code>Strategy__c</code> field and a non-zero net position.
+  Trades that net off to zero are excluded. Fix the value in Salesforce, then re-sync.
+</div>
+<div class="d-inline-block">
+  <table class="table table-hover table-sm mb-0 text-center" style="white-space: nowrap;">
+    <thead class="table-dark">
+      <tr>
+        <th>Trade Date</th>
+        <th>Contract</th>
+        <th>Trade Price</th>
+        <th>Long</th>
+        <th>Short</th>
+        <th>Net</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in groups %}
+      <tr class="table-warning">
+        <td>{{ g.trade_date or '—' }}</td>
+        <td>{{ g.contract|format_contract or '—' }}</td>
+        <td>{{ "%.2f"|format(g.price) if g.price is not none else '—' }}</td>
+        <td>{{ g.long | int if g.long == g.long | int else g.long }}</td>
+        <td>{{ g.short | int if g.short == g.short | int else g.short }}</td>
+        <td class="fw-semibold {% if g.net > 0 %}text-success{% elif g.net < 0 %}text-danger{% endif %}">
+          {{ g.net | int if g.net == g.net | int else g.net }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center text-success py-5">
+  <i class="bi bi-check-circle-fill fs-1"></i>
+  <p class="mt-2 fw-semibold">No open positions with missing Strategy field.</p>
+</div>
+{% endif %}
+{% endblock %}

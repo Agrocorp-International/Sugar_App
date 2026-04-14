@@ -1,0 +1,1853 @@
+{% extends "base.html" %}
+{% block title %}Position Simulator - Sugar Trading{% endblock %}
+
+{% block content %}
+
+{# ── Scoped Styles ───────────────────────────────────────────────────── #}
+<style>
+  /* ── Page header ──────────────────────────────────────────────────── */
+  .opt-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .opt-page-header .opt-title-group h4 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -.01em;
+  }
+  .opt-page-header .opt-title-group .opt-subtitle {
+    color: #6c757d;
+    font-size: .82rem;
+    margin-top: .15rem;
+  }
+  .opt-meta-pills {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .opt-meta-pills .meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .7rem;
+    border-radius: 6px;
+    font-size: .78rem;
+    font-weight: 600;
+    background: #e9ecef;
+    color: #495057;
+  }
+  .opt-meta-pills .meta-pill i { font-size: .85rem; }
+
+  /* ── Card hover lift (subtle) ─────────────────────────────────────── */
+  .opt-card-lift {
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  .opt-card-lift:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+    transform: translateY(-1px);
+  }
+
+  /* ── Greeks bar semantic colors ───────────────────────────────────── */
+  .greek-chip {
+    padding: .5rem .85rem;
+    border-radius: 8px;
+    border-left: 3px solid transparent;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .greek-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .greek-chip.chip-delta  { background: #e8f5e9; border-left-color: #43a047; }
+  .greek-chip.chip-gamma  { background: #e3f2fd; border-left-color: #1e88e5; }
+  .greek-chip.chip-vega   { background: #fff3e0; border-left-color: #fb8c00; }
+  .greek-chip.chip-theta  { background: #fce4ec; border-left-color: #e53935; }
+
+  /* ── Buttons: pulse on action ─────────────────────────────────────── */
+  .btn-action {
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn-action:active {
+    transform: scale(.96);
+  }
+</style>
+
+{# ── Page Header with Context ────────────────────────────────────────── #}
+<div class="opt-page-header">
+  <div class="opt-title-group">
+    <h4><i class="bi bi-graph-up me-2" style="color:#3b82f6;"></i>Options Payoff Simulator</h4>
+    <div class="opt-subtitle">Payoff analysis and scenario simulation for sugar options positions</div>
+  </div>
+  <div class="opt-meta-pills">
+    {% if selected and selected|length > 0 %}
+    <span class="meta-pill"><i class="bi bi-tag"></i>{{ selected|length }} trade{{ 's' if selected|length != 1 }} loaded</span>
+    {% endif %}
+    {% if as_of_date %}
+    <span class="meta-pill"><i class="bi bi-calendar3"></i>As-of {{ as_of_date.strftime('%d %b %Y') }}</span>
+    {% endif %}
+    {% if ref_month %}
+    <span class="meta-pill"><i class="bi bi-bullseye"></i>Ref: {{ ref_month }}{% if ref_month_settlement is not none %} @ {{ "%.2f"|format(ref_month_settlement) }}{% endif %}</span>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Segmented Tab Switcher ──────────────────────────────────────────── #}
+<div class="tab-switcher" id="optionsSwitcher">
+  <button class="tab-sw-btn active" id="payoff-tab-btn" data-target="#payoff-tab" type="button">
+    <i class="bi bi-currency-dollar"></i>Payoff 1
+  </button>
+  <button class="tab-sw-btn" id="simulator-tab-btn" data-target="#simulator-tab" type="button">
+    <i class="bi bi-currency-dollar"></i>Payoff 2
+  </button>
+</div>
+
+<script>
+// Manual tab switching (no Bootstrap tab plugin dependency)
+document.addEventListener('DOMContentLoaded', function() {
+  const switcher = document.getElementById('optionsSwitcher');
+  const buttons  = switcher.querySelectorAll('.tab-sw-btn');
+  const panes    = document.querySelectorAll('.tab-content > .tab-pane');
+
+  function activateTab(btn) {
+    const target = btn.getAttribute('data-target');
+    // Update buttons
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Update panes
+    panes.forEach(p => {
+      p.classList.remove('show', 'active');
+    });
+    const pane = document.querySelector(target);
+    if (pane) {
+      // Small delay so the CSS transition triggers
+      requestAnimationFrame(() => { pane.classList.add('active', 'show'); });
+    }
+    localStorage.setItem('optionsActiveTab', '#' + btn.id);
+  }
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn));
+  });
+
+  // Restore saved tab
+  const saved = localStorage.getItem('optionsActiveTab');
+  if (saved) {
+    const btn = document.querySelector(saved);
+    if (btn) activateTab(btn);
+  }
+});
+</script>
+
+<div class="tab-content">
+
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# ══  PAYOFF TAB  ═════════════════════════════════════════════════════ #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="tab-pane show active" id="payoff-tab" role="tabpanel">
+
+{% if not trade_ids %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-graph-up fs-1"></i>
+  <p class="mt-2">No open Spec options found. Sync from Salesforce to populate.</p>
+</div>
+{% else %}
+
+{# ── Panel 1: Load Positions ─────────────────────────────────────────── #}
+<div class="card mb-3" style="background:#f8f9fa;">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">Step 1: Load Positions</h6>
+    <form method="GET" id="payoff1-form" class="d-flex align-items-end gap-3 flex-wrap">
+      {% for i in range(5) %}
+      <div>
+        <label class="form-label fw-semibold mb-1">Trade ID {{ i + 1 }}</label>
+        <select name="trade_id" class="form-select form-select-lg" style="min-width:150px; font-size:1rem;">
+          <option value="">—</option>
+          {% for tid in trade_ids %}
+            <option value="{{ tid }}" {% if i < selected_slots|length and selected_slots[i] == tid %}selected{% endif %}>{{ tid }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+      <div>
+        <label class="form-label fw-semibold mb-1">As-of Date</label>
+        <input type="date" name="as_of_date" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:170px;"
+               value="{{ as_of_date.isoformat() }}">
+      </div>
+      <div class="d-flex align-items-end gap-3">
+        <div>
+          <label class="form-label fw-semibold mb-1">Reference Month (SB)</label>
+          <select name="ref_month" class="form-select form-select-lg" style="min-width:150px; font-size:1rem;">
+            {% for f in sb_futures %}
+              <option value="{{ f.code }}" {% if f.code == ref_month %}selected{% endif %}>
+                {{ f.label }}{% if f.expiry %} (exp {{ f.expiry.strftime('%d %b %Y') }}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="padding-bottom:0.4rem;">
+          <div class="text-muted small fw-semibold text-uppercase mb-1" style="letter-spacing:.06em;">Sett-1</div>
+          <div class="fw-bold fs-3">
+            {% if ref_month_settlement is not none %}
+              {{ "%.2f"|format(ref_month_settlement) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <button type="submit" id="payoff1-load-btn" class="btn btn-lg btn-action ms-2"
+              style="background:#1a6b72; color:white; border:none; font-size:1rem; padding: 0.6rem 1.4rem;">
+        <i class="bi bi-play-fill me-1"></i>Load Positions
+      </button>
+    </form>
+    <script>
+      (function() {
+        const form = document.getElementById('payoff1-form');
+        if (!form) return;
+        const btn = document.getElementById('payoff1-load-btn');
+
+        function showLoading() {
+          if (!btn) return;
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Loading...';
+          // Visually indicate inputs are locked, but DO NOT disable
+          // (disabled form fields are excluded from submission)
+          form.style.pointerEvents = 'none';
+          form.style.opacity = '0.7';
+        }
+
+        form.addEventListener('submit', showLoading);
+        form.querySelectorAll('select[name="trade_id"], select[name="ref_month"], input[name="as_of_date"]').forEach(el => {
+          el.addEventListener('change', () => {
+            // Submit first (form must be enabled for values to be sent),
+            // then show loading state
+            form.submit();
+            showLoading();
+          });
+        });
+      })();
+    </script>
+  </div>
+</div>
+
+{# ── Panel 2: Portfolio Greeks ────────────────────────────────────────── #}
+{# Pre-compute totals for display in this card #}
+{% set total_lots_g = grouped_legs | sum(attribute='long') + grouped_legs | sum(attribute='short') %}
+{% set total_pos_g = namespace(val=none) %}
+{% set total_pnl_g = namespace(val=none) %}
+{% for g in grouped_legs %}
+  {% if g.position is not none %}{% set total_pos_g.val = (total_pos_g.val or 0) + g.position %}{% endif %}
+  {% if g.pnl is not none %}{% set total_pnl_g.val = (total_pnl_g.val or 0) + g.pnl %}{% endif %}
+{% endfor %}
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">Portfolio Summary</h6>
+
+    {% if excluded_count > 0 %}
+    <div class="alert alert-warning py-1 px-2 small mb-3" role="alert">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      {{ excluded_count }} position(s) excluded due to missing IV-1 or price data.
+    </div>
+    {% endif %}
+
+    <div class="d-flex gap-5 flex-wrap">
+
+      {# Net Lots #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">Net Lots</div>
+        <div class="fw-bold fs-3 {% if total_lots_g > 0 %}text-success{% elif total_lots_g < 0 %}text-danger{% endif %}">
+          {{ "%+d"|format(total_lots_g|int) }}
+        </div>
+      </div>
+
+      {# Position #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">Position</div>
+        <div class="fw-bold fs-3 {% if total_pos_g.val is not none %}{% if total_pos_g.val >= 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">
+          {% if total_pos_g.val is not none %}{{ "%.1f"|format(total_pos_g.val) }}{% else %}—{% endif %}
+        </div>
+      </div>
+
+      {# PNL #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">PNL</div>
+        <div class="fw-bold fs-3 {% if total_pnl_g.val is not none %}{% if total_pnl_g.val >= 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">
+          {% if total_pnl_g.val is not none %}
+            {% if total_pnl_g.val >= 0 %}${{ "{:,.0f}".format(total_pnl_g.val) }}{% else %}-${{ "{:,.0f}".format(total_pnl_g.val|abs) }}{% endif %}
+          {% else %}—{% endif %}
+        </div>
+      </div>
+
+      {# Divider #}
+      <div style="border-left:1px solid #dee2e6; margin:0 .5rem;"></div>
+
+      {# Delta #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">Delta</div>
+        <div class="fw-bold fs-3 {% if portfolio.delta >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ "{:,.0f}".format(portfolio.delta) }}
+        </div>
+      </div>
+
+      {# Gamma #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">Gamma</div>
+        <div class="fw-bold fs-3 {% if portfolio.gamma >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ "{:,.0f}".format(portfolio.gamma) }}
+        </div>
+      </div>
+
+      {# Vega #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">Vega ($)</div>
+        <div class="fw-bold fs-3 {% if portfolio.vega >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ "{:,.0f}".format(portfolio.vega) }}
+        </div>
+        <div class="text-muted" style="font-size:0.72rem;">per 1% vol change</div>
+      </div>
+
+      {# Theta #}
+      <div>
+        <div class="text-muted small text-uppercase fw-semibold mb-1"
+             style="letter-spacing:.06em;">Theta ($/day)</div>
+        <div class="fw-bold fs-3 {% if portfolio.theta >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ "{:,.0f}".format(portfolio.theta) }}
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{# ── Legs Table ───────────────────────────────────────────────────────── #}
+{% if grouped_legs %}
+<div class="card mb-4 opt-card-lift">
+  <div class="card-body">
+
+    {# Header #}
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <span class="fw-bold" style="font-size:1.05rem;">Position Legs</span>
+      <span class="badge rounded-pill" style="background:#0d6efd; font-size:.85rem;">{{ grouped_legs|length }}</span>
+    </div>
+    <p class="text-muted mb-3" style="font-size:.8rem;">Read-only summary of aggregated position legs loaded from Salesforce.</p>
+
+    <table class="table align-middle mb-0" style="font-size:1.25rem; border-collapse:separate; border-spacing:0;">
+      <thead>
+        <tr style="border-bottom: 2px solid #dee2e6; font-size:1.2rem;">
+          <th style="padding:1rem 1.25rem;">Contract</th>
+          <th style="padding:1rem 1.25rem;">Net Lots</th>
+          <th style="padding:1rem 1.25rem;">Position</th>
+          <th style="padding:1rem 1.25rem;">Trade Price</th>
+          <th style="padding:1rem 1.25rem;">Sett-1</th>
+          <th style="padding:1rem 1.25rem;">PNL</th>
+          <th style="padding:1rem 1.25rem;">Expiry</th>
+          <th style="padding:1rem 1.25rem;">IV</th>
+          <th style="padding:1rem 1.25rem;">Delta</th>
+          <th style="padding:1rem 1.25rem;">Gamma</th>
+          <th style="padding:1rem 1.25rem;">Vega ($)</th>
+          <th style="padding:1rem 1.25rem;">Theta ($)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(current_group='') %}
+        {% for g in grouped_legs %}
+          {% set pc = g.Put_Call_2__c or 'Futures' %}
+          {% if pc != ns.current_group %}
+            {% set ns.current_group = pc %}
+            <tr style="background:#f8f9fa; border-bottom:2px solid #dee2e6;">
+              <td colspan="12" style="padding:.6rem 1.25rem; font-weight:700; font-size:1.05rem; color:#495057; letter-spacing:.04em;">
+                {% if pc == 'Call' %}Options — Calls{% elif pc == 'Put' %}Options — Puts{% else %}Futures{% endif %}
+              </td>
+            </tr>
+          {% endif %}
+          {% set net_lots = g.long + g.short %}
+          <tr style="border-bottom: 1px solid #f0f0f0;">
+            <td style="padding:1.1rem 1.25rem; color:#0d6efd; font-weight:500;">{{ g.contract_key|format_contract }}</td>
+            <td style="padding:1.1rem 1.25rem;">{{ net_lots|int }}</td>
+            <td style="padding:1.1rem 1.25rem;">
+              {% if g.position is not none %}{{ "%.1f"|format(g.position) }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="padding:1.1rem 1.25rem;">{{ "%.2f"|format(g.avg_price) }}</td>
+            <td style="padding:1.1rem 1.25rem;">
+              {% if g.settlement is not none %}{{ "%.2f"|format(g.settlement) }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="padding:1.1rem 1.25rem;">
+              {% if g.pnl is not none %}
+                <span class="{% if g.pnl >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
+                  {% if g.pnl >= 0 %}${{ "{:,.0f}".format(g.pnl) }}{% else %}-${{ "{:,.0f}".format(g.pnl|abs) }}{% endif %}
+                </span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="padding:1.1rem 1.25rem;">
+              {% if g.expiry is not none and g.Put_Call_2__c %}{{ g.expiry.strftime('%d %b %Y') }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="padding:1.1rem 1.25rem;">
+              {% if g.iv is not none %}{{ "%.1f"|format(g.iv * 100) }}%{% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="padding:1.1rem 1.25rem; {% if g.delta >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
+              {{ "{:,.0f}".format(g.delta) }}
+            </td>
+            <td style="padding:1.1rem 1.25rem; {% if g.gamma >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
+              {{ "{:,.2f}".format(g.gamma) }}
+            </td>
+            <td style="padding:1.1rem 1.25rem; {% if g.vega >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
+              {{ "{:,.0f}".format(g.vega) }}
+            </td>
+            <td style="padding:1.1rem 1.25rem; {% if g.theta >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
+              {{ "{:,.0f}".format(g.theta) }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+</div>
+
+{% endif %}
+
+{# ── Panel 3: Set Assumptions ─────────────────────────────────────────── #}
+<div class="card mb-3" style="background:#f8f9fa;">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">Step 2: Set Assumptions</h6>
+    <div class="d-flex align-items-end gap-3 flex-wrap">
+      <div>
+        <label class="form-label fw-semibold mb-1">Spot Call IV (%)</label>
+        <input type="number" id="s2-spot-call-iv" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:140px;" value="24">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Spot Put IV (%)</label>
+        <input type="number" id="s2-spot-put-iv" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:140px;" value="24">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Skew/c (%)</label>
+        <input type="number" id="s2-skew-c" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:120px;" value="0.20">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">r (%){% if sofr_date %} <small class="text-muted" title="SOFR as of {{ sofr_date }}">SOFR</small>{% endif %}</label>
+        <input type="number" id="s2-r" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:120px;" value="{{ sofr_rate_pct }}">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">exp</label>
+        <input type="number" id="s2-exp" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:120px;" value="1.37">
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Panel 3: Generate Dates and Strikes ──────────────────────────────── #}
+<div class="card mb-3" style="background:#f8f9fa;">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">Step 3: Generate Dates and Strikes</h6>
+
+    <div class="d-flex align-items-end gap-3 flex-wrap mb-3">
+      <div>
+        <label class="form-label fw-semibold mb-1">Input Date</label>
+        <input type="date" id="s3-input-date" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:170px;"
+               value="{{ as_of_date.isoformat() }}">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Input Price</label>
+        <input type="number" id="s3-input-price" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:130px;" placeholder="e.g. 18.00"
+               {% if ref_month_settlement is not none %}value="{{ ref_month_settlement | round(0) | int }}"{% endif %}>
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Price Interval</label>
+        <input type="number" id="s3-price-interval" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:130px;" placeholder="e.g. 0.25" value="0.25">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">No. of Dates</label>
+        <input type="number" id="s3-num-dates" step="1" min="2" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:120px;" placeholder="e.g. 5" value="5">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">No. of Strikes</label>
+        <input type="number" id="s3-num-strikes" step="1" min="1" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:120px;" placeholder="e.g. 25" value="25">
+      </div>
+      <div style="border-left:1px solid #dee2e6; margin:0 .3rem;"></div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Debug Strike</label>
+        <input type="number" id="s3-debug-strike" step="0.01" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:120px;" placeholder="e.g. 16">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Debug Date</label>
+        <input type="date" id="s3-debug-date" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:170px;">
+      </div>
+      <button type="button" id="s3-generate-btn" class="btn btn-lg btn-action"
+              style="background:#1a6b72; color:white; border:none; font-size:1rem; padding:0.6rem 1.4rem;">
+        <i class="bi bi-grid me-1"></i>Generate
+      </button>
+    </div>
+
+    <div class="d-flex gap-4 flex-wrap mb-3">
+      <div>
+        <label class="form-label fw-semibold mb-1">Latest Expiry Date</label>
+        <input type="date" id="s3-latest-expiry" class="form-control form-control-lg"
+               style="font-size:1rem; min-width:170px;"
+               value="{% if latest_expiry %}{{ latest_expiry.isoformat() }}{% endif %}">
+      </div>
+      <div>
+        <span class="text-muted small fw-semibold text-uppercase" style="letter-spacing:.06em;">Date Interval (days)</span>
+        <div class="fw-semibold mt-1" id="s3-date-interval">—</div>
+      </div>
+    </div>
+
+    <div id="s3-error" class="d-none text-danger small mb-2"></div>
+
+    <div id="s3-output" class="d-none">
+      <hr class="my-3">
+      <div class="mb-3">
+        <div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.06em;">Dates (<span id="s3-dates-label"></span>)</div>
+        <div id="s3-dates-list" class="d-flex gap-2 flex-wrap"></div>
+      </div>
+      <div>
+        <div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.06em;">Strikes (<span id="s3-strikes-label"></span>)</div>
+        <div id="s3-strikes-list" class="d-flex gap-2 flex-wrap"></div>
+      </div>
+      <div id="s3-payoff-container" class="d-none mt-4"></div>
+      <div id="s3-leg-details" class="d-none mt-4"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  function getLatestExpiryIso() { return document.getElementById('s3-latest-expiry').value || null; }
+  const asOfDateIso     = {{ as_of_date.isoformat() | tojson }};
+  const selectedIds     = {{ selected | tojson }};
+  const refMonthSett    = {{ ref_month_settlement if ref_month_settlement is not none else 'null' }};
+  let payoffChart = null;
+
+  function parseDateLocal(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function fmtDate(dt) {
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('s3-error');
+    el.textContent = msg;
+    el.classList.remove('d-none');
+  }
+
+  function clearError() {
+    const el = document.getElementById('s3-error');
+    el.textContent = '';
+    el.classList.add('d-none');
+  }
+
+  function updateInterval() {
+    const inputDateVal = document.getElementById('s3-input-date').value;
+    const numDates = parseInt(document.getElementById('s3-num-dates').value, 10);
+    const el = document.getElementById('s3-date-interval');
+    if (!getLatestExpiryIso() || !inputDateVal || isNaN(numDates) || numDates < 2) { el.textContent = '—'; return; }
+    const inputDate  = parseDateLocal(inputDateVal);
+    const expiryDate = parseDateLocal(getLatestExpiryIso());
+    const diffDays   = Math.round((expiryDate - inputDate) / 86400000);
+    if (diffDays <= 0) { el.textContent = '—'; return; }
+    el.textContent = Math.round(diffDays / (numDates - 1)) + ' days';
+  }
+
+  document.getElementById('s3-input-date').addEventListener('input', updateInterval);
+  document.getElementById('s3-latest-expiry').addEventListener('input', updateInterval);
+  document.getElementById('s3-num-dates').addEventListener('input', updateInterval);
+  updateInterval();
+
+  function fmtContract(c) {
+    if (!c || c.length < 3) return c || '';
+    if (c[2] === ' ') return c;
+    const pfx = c.substring(0, 2).toUpperCase();
+    if (pfx === 'SB' || pfx === 'SW') return c.substring(0, 2) + ' ' + c.substring(2);
+    return c;
+  }
+  function fmtPnl(val) {
+    const abs = Math.abs(val);
+    const fmt = '$' + abs.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    return val < 0 ? '-' + fmt : fmt;
+  }
+
+  function pnlColor(val, maxAbs) {
+    if (maxAbs === 0) return '';
+    const alpha = 0.12 + Math.min(Math.abs(val) / maxAbs, 1.0) * 0.55;
+    if (val > 0) return `rgba(25,135,84,${alpha.toFixed(2)})`;
+    if (val < 0) return `rgba(220,53,69,${alpha.toFixed(2)})`;
+    return '';
+  }
+
+  // Line colors cycling through for each scenario date
+  const _LINE_COLORS = [
+    '#1a6b72','#e6a817','#d94f3d','#5b7fd4','#2eac69',
+    '#9b59b6','#e67e22','#1abc9c','#e74c3c','#3498db',
+  ];
+
+  let chartScaleMode = 'full';  // 'tight' or 'full'
+
+  function renderPayoffGrid(data, container) {
+    const { dates, strikes, grid } = data;
+    let maxAbs = 0;
+    let yMin = Infinity, yMax = -Infinity;
+    for (const row of grid) for (const v of row) {
+      if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+      if (v < yMin) yMin = v;
+      if (v > yMax) yMax = v;
+    }
+
+    // ── Chart section ────────────────────────────────────────────────────
+    let html = '<hr class="my-3">';
+    html += '<div class="d-flex align-items-center gap-3 mb-2">';
+    html += '<span class="text-muted small fw-semibold text-uppercase" style="letter-spacing:.06em;">Payoff Chart</span>';
+    html += '<div class="btn-group btn-group-sm" role="group">';
+    html += `<button type="button" class="btn ${chartScaleMode === 'tight' ? 'btn-primary' : 'btn-outline-secondary'}" id="s3-scale-tight">Auto scale (tight)</button>`;
+    html += `<button type="button" class="btn ${chartScaleMode === 'full' ? 'btn-primary' : 'btn-outline-secondary'}" id="s3-scale-full">Full range (raw)</button>`;
+    html += '</div></div>';
+    html += '<div style="position:relative;height:550px;"><canvas id="s3-payoff-chart"></canvas></div>';
+
+    // ── Table section ────────────────────────────────────────────────────
+    html += '<div class="text-muted small fw-semibold text-uppercase mt-4 mb-2" style="letter-spacing:.06em;">Payoff Grid (USD)</div>';
+    html += '<div class="table-responsive"><table class="table table-bordered table-sm mb-0" style="font-size:.85rem; white-space:nowrap;">';
+    html += '<thead><tr><th style="background:#f8f9fa;">Price \\ Date</th>';
+    for (const iso of dates) {
+      const [y, mo, dy] = iso.split('-').map(Number);
+      html += `<th style="background:#f8f9fa;text-align:center;">${fmtDate(new Date(y, mo - 1, dy))}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+    for (let ri = 0; ri < strikes.length; ri++) {
+      html += `<tr><td style="background:#f8f9fa;font-weight:600;">${strikes[ri].toFixed(2)}</td>`;
+      for (let ci = 0; ci < dates.length; ci++) {
+        const val       = grid[ri][ci];
+        const bg        = pnlColor(val, maxAbs);
+        const intensity = maxAbs ? Math.abs(val) / maxAbs : 0;
+        const fg        = intensity > 0.5 ? '#fff' : (val > 0 ? '#155724' : val < 0 ? '#721c24' : '#333');
+        const sty       = bg ? `background:${bg};color:${fg};text-align:right;` : 'text-align:right;';
+        html += `<td style="${sty}">${fmtPnl(val)}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+
+    // ── Build Chart.js datasets (one line per date) ──────────────────────
+    if (payoffChart) { payoffChart.destroy(); payoffChart = null; }
+
+    const datasets = dates.map((iso, ci) => {
+      const [y, mo, dy] = iso.split('-').map(Number);
+      const label = fmtDate(new Date(y, mo - 1, dy));
+      const color = _LINE_COLORS[ci % _LINE_COLORS.length];
+      const isLast = ci === dates.length - 1;
+      return {
+        label,
+        data: strikes.map((s, ri) => ({ x: s, y: grid[ri][ci] })),
+        borderColor: color,
+        backgroundColor: color,
+        borderWidth: isLast ? 2.5 : 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        tension: 0.45,
+        fill: false,
+      };
+    });
+
+    // Axis ranges
+    const yRange = yMax - yMin;
+    const yPad = yRange * 0.35;
+    let yScaleOpts = {};
+    if (chartScaleMode === 'tight') {
+      if (yMin < 0 && yMax > 0) {
+        // Symmetric around 0
+        const absMax = Math.max(Math.abs(yMin), Math.abs(yMax));
+        const symPad = absMax * 0.35;
+        yScaleOpts = { min: -(absMax + symPad), max: absMax + symPad };
+      } else {
+        yScaleOpts = { min: Math.floor(yMin - yPad), max: Math.ceil(yMax + yPad) };
+      }
+    }
+
+    const xMin = Math.min(...strikes);
+    const xMax = Math.max(...strikes);
+    const xPad = (xMax - xMin) * 0.20;
+    const xScaleOpts = { min: xMin - xPad, max: xMax + xPad };
+
+    payoffChart = new Chart(document.getElementById('s3-payoff-chart'), {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            align: 'center',
+            labels: { boxWidth: 16, font: { size: 15 }, padding: 18, usePointStyle: true, pointStyle: 'line' },
+          },
+          tooltip: {
+            titleFont: { size: 14 },
+            bodyFont: { size: 14 },
+            callbacks: {
+              title: ctxs => `Price: ${ctxs[0].parsed.x.toFixed(2)}`,
+              label: ctx => `${ctx.dataset.label}: ${fmtPnl(ctx.parsed.y)}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            ...xScaleOpts,
+            title: { display: true, text: 'Futures Price', font: { size: 15 } },
+            ticks: {
+              callback: v => Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2),
+              font: { size: 14 },
+            },
+          },
+          y: {
+            ...yScaleOpts,
+            title: { display: true, text: 'P&L (USD)', font: { size: 15 } },
+            ticks: { callback: v => fmtPnl(v), font: { size: 14 } },
+            grid: {
+              color: ctx => ctx.tick.value === 0 ? 'rgba(0,0,0,0.50)' : 'rgba(0,0,0,0.07)',
+              lineWidth: ctx => ctx.tick.value === 0 ? 2.5 : 0.8,
+            },
+          },
+        },
+      },
+    });
+
+    // Scale toggle buttons
+    document.getElementById('s3-scale-tight').addEventListener('click', () => {
+      chartScaleMode = 'tight';
+      renderPayoffGrid(data, container);
+    });
+    document.getElementById('s3-scale-full').addEventListener('click', () => {
+      chartScaleMode = 'full';
+      renderPayoffGrid(data, container);
+    });
+  }
+
+  function renderLegDetails(legs, strike, dateStr, container) {
+    const [y, mo, dy] = dateStr.split('-').map(Number);
+    const label = `Strike ${strike.toFixed(2)} / ${fmtDate(new Date(y, mo - 1, dy))}`;
+    let totalPnl = 0;
+    for (const l of legs) totalPnl += l.leg_pnl;
+
+    let html = '<hr class="my-3">';
+    html += `<div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.06em;">Per-Leg Breakdown — ${label}</div>`;
+    html += '<div class="table-responsive"><table class="table table-bordered table-sm mb-0" style="font-size:.85rem; white-space:nowrap;">';
+    html += '<thead><tr>';
+    html += '<th style="background:#f8f9fa;">Contract</th>';
+    html += '<th style="background:#f8f9fa;">Type</th>';
+    html += '<th style="background:#f8f9fa;">Net Lots</th>';
+    html += '<th style="background:#f8f9fa;">Trade Price</th>';
+    html += '<th style="background:#f8f9fa;">Scenario F</th>';
+    html += '<th style="background:#f8f9fa;">Scenario Value</th>';
+    html += '<th style="background:#f8f9fa;">Scenario IV (%)</th>';
+    html += '<th style="background:#f8f9fa;">T (yrs)</th>';
+    html += '<th style="background:#f8f9fa;">Leg PNL</th>';
+    html += '<th style="background:#f8f9fa;">IV Debug</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const l of legs) {
+      const pnlColor = l.leg_pnl >= 0 ? '#198754' : '#dc3545';
+      html += '<tr>';
+      html += `<td style="color:#0d6efd;font-weight:500;">${fmtContract(l.contract_key)}</td>`;
+      html += `<td>${l.option_type}</td>`;
+      html += `<td>${l.net_lots}</td>`;
+      html += `<td>${l.trade_price.toFixed(2)}</td>`;
+      html += `<td>${l.scenario_F.toFixed(2)}</td>`;
+      html += `<td>${l.scenario_value.toFixed(4)}</td>`;
+      html += `<td>${l.scenario_iv !== null ? l.scenario_iv.toFixed(2) + '%' : '—'}</td>`;
+      html += `<td>${l.T !== null ? l.T.toFixed(4) : '—'}</td>`;
+      html += `<td style="color:${pnlColor};font-weight:600;">${fmtPnl(l.leg_pnl)}</td>`;
+      if (l.iv_debug) {
+        const d = l.iv_debug;
+        const tip = `base_iv: ${d.base_iv_pct}%  target_iv: ${d.target_iv_pct}%  cur_iv: ${d.current_iv_pct}%  tw: ${d.time_weight}  bump: ${d.price_bump_pct}%  raw: ${d.scenario_iv_pct_raw}%  final: ${d.scenario_iv_pct_floored}%`;
+        html += `<td><span class="badge bg-info text-dark" style="cursor:help;font-size:.75rem;" title="${tip}">hover</span></td>`;
+      } else {
+        html += '<td>—</td>';
+      }
+      html += '</tr>';
+    }
+
+    // Total row
+    const totalColor = totalPnl >= 0 ? '#198754' : '#dc3545';
+    html += `<tr style="border-top:2px solid #dee2e6;"><td colspan="8" style="font-weight:700;text-align:right;">Total</td>`;
+    html += `<td style="color:${totalColor};font-weight:700;">${fmtPnl(totalPnl)}</td><td></td></tr>`;
+    html += '</tbody></table></div>';
+
+    container.innerHTML = html;
+    container.classList.remove('d-none');
+  }
+
+  document.getElementById('s3-generate-btn').addEventListener('click', function () {
+    clearError();
+
+    const inputDateVal = document.getElementById('s3-input-date').value;
+    const inputPrice   = parseFloat(document.getElementById('s3-input-price').value);
+    const priceInt     = parseFloat(document.getElementById('s3-price-interval').value);
+    const numDates     = parseInt(document.getElementById('s3-num-dates').value, 10);
+    const numStrikes   = parseInt(document.getElementById('s3-num-strikes').value, 10);
+
+    if (!getLatestExpiryIso()) { showError('No expiry date found — load positions first.'); return; }
+    if (!inputDateVal)     { showError('Please enter an Input Date.'); return; }
+    if (isNaN(inputPrice)) { showError('Please enter a valid Input Price.'); return; }
+    if (isNaN(priceInt) || priceInt <= 0) { showError('Please enter a valid Price Interval.'); return; }
+    if (isNaN(numDates) || numDates < 2)  { showError('No. of Dates must be at least 2.'); return; }
+    if (isNaN(numStrikes) || numStrikes < 1) { showError('No. of Strikes must be at least 1.'); return; }
+
+    const inputDate  = parseDateLocal(inputDateVal);
+    const expiryDate = parseDateLocal(getLatestExpiryIso());
+    const totalDays  = Math.round((expiryDate - inputDate) / 86400000);
+    if (totalDays <= 0) { showError('Input Date must be before the Latest Expiry Date (' + fmtDate(expiryDate) + ').'); return; }
+
+    const intervalDays = totalDays / (numDates - 1);
+
+    // Generate dates from Input Date to Latest Expiry
+    const datesEl = document.getElementById('s3-dates-list');
+    datesEl.innerHTML = '';
+    document.getElementById('s3-dates-label').textContent = numDates;
+    for (let i = 0; i < numDates; i++) {
+      const dt = new Date(inputDate.getTime() + i * intervalDays * 86400000);
+      const badge = document.createElement('span');
+      badge.className = 'badge rounded-pill bg-primary';
+      badge.style.fontSize = '.95rem';
+      badge.textContent = fmtDate(dt);
+      datesEl.appendChild(badge);
+    }
+
+    // Generate N strikes centred on Input Price
+    const strikesEl = document.getElementById('s3-strikes-list');
+    strikesEl.innerHTML = '';
+    document.getElementById('s3-strikes-label').textContent = numStrikes;
+    const half = Math.floor(numStrikes / 2);
+    for (let i = -half; i < numStrikes - half; i++) {
+      const strike = inputPrice + i * priceInt;
+      const badge = document.createElement('span');
+      badge.className = 'badge rounded-pill ' + (i === 0 ? 'bg-warning text-dark' : 'bg-secondary');
+      badge.style.fontSize = '.95rem';
+      badge.textContent = strike.toFixed(2);
+      strikesEl.appendChild(badge);
+    }
+
+    document.getElementById('s3-output').classList.remove('d-none');
+
+    // ── Build ISO arrays for fetch body ───────────────────────────────────
+    const scenarioDates = [];
+    for (let i = 0; i < numDates; i++) {
+      const dt = new Date(inputDate.getTime() + i * intervalDays * 86400000);
+      const y  = dt.getFullYear();
+      const mo = String(dt.getMonth() + 1).padStart(2, '0');
+      const dy = String(dt.getDate()).padStart(2, '0');
+      scenarioDates.push(`${y}-${mo}-${dy}`);
+    }
+    const scenarioStrikes = [];
+    const halfV = Math.floor(numStrikes / 2);
+    for (let i = -halfV; i < numStrikes - halfV; i++) {
+      scenarioStrikes.push(parseFloat((inputPrice + i * priceInt).toFixed(4)));
+    }
+
+    // ── Show spinner ──────────────────────────────────────────────────────
+    const payoffContainer = document.getElementById('s3-payoff-container');
+    payoffContainer.innerHTML =
+      '<div class="text-muted small mt-3"><span class="spinner-border spinner-border-sm me-1"></span>Computing payoff grid...</div>';
+    payoffContainer.classList.remove('d-none');
+
+    // ── Debug point (optional) ──────────────────────────────────────────
+    const debugStrike = parseFloat(document.getElementById('s3-debug-strike').value);
+    const debugDate   = document.getElementById('s3-debug-date').value;
+    const reqBody = {
+      trade_ids:    selectedIds,
+      as_of_date:   asOfDateIso,
+      input_date:   inputDateVal,
+      dates:        scenarioDates,
+      strikes:      scenarioStrikes,
+      spot_call_iv: parseFloat(document.getElementById('s2-spot-call-iv').value),
+      spot_put_iv:  parseFloat(document.getElementById('s2-spot-put-iv').value),
+      skew_c:       parseFloat(document.getElementById('s2-skew-c').value),
+      r_pct:        parseFloat(document.getElementById('s2-r').value),
+      exp_param:    parseFloat(document.getElementById('s2-exp').value),
+      ref_month_sett: refMonthSett,
+    };
+    if (!isNaN(debugStrike) && debugDate) {
+      reqBody.detail_strike = debugStrike;
+      reqBody.detail_date   = debugDate;
+    }
+
+    // ── Fetch payoff grid from backend ────────────────────────────────────
+    const legDetailsContainer = document.getElementById('s3-leg-details');
+    fetch('/options/payoff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqBody),
+    })
+    .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e.error || 'Server error')))
+    .then(data => {
+      renderPayoffGrid(data, payoffContainer);
+      if (data.leg_details && data.leg_details.length > 0) {
+        renderLegDetails(data.leg_details, debugStrike, debugDate, legDetailsContainer);
+      } else {
+        legDetailsContainer.classList.add('d-none');
+      }
+    })
+    .catch(err => {
+      payoffContainer.innerHTML =
+        `<div class="text-danger small mt-2"><i class="bi bi-exclamation-triangle me-1"></i>${err}</div>`;
+    });
+  });
+})();
+</script>
+
+{% endif %}
+</div>{# end payoff-tab #}
+
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# ══  SIMULATOR TAB  ═════════════════════════════════════════════════ #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="tab-pane" id="simulator-tab" role="tabpanel">
+
+{# ── Section 1: Load Positions ───────────────────────────────────────── #}
+<div class="card mb-3" style="background:#f8f9fa;">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">Step 1: Load Positions</h6>
+    <div class="d-flex align-items-end gap-3 flex-wrap mb-3">
+      {% for i in range(5) %}
+      <div>
+        <label class="form-label fw-semibold mb-1">Trade ID {{ i + 1 }}</label>
+        <select name="sim_trade_id" class="form-select sim-trade-id-sel" style="min-width:150px; font-size:1rem;">
+          <option value="">—</option>
+          {% for tid in sim_trade_ids %}
+            <option value="{{ tid }}">{{ tid }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+      <button type="button" id="sim-load-btn" class="btn btn-action"
+              style="background:#1a6b72; color:white; border:none; padding:0.5rem 1.2rem;">
+        <i class="bi bi-play-fill me-1"></i>Load Positions
+      </button>
+      <button type="button" id="sim-reset-limits-btn" class="btn btn-outline-secondary" style="display:none;">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Limits (±20%)
+      </button>
+    </div>
+
+    {# Greeks summary bar #}
+    <div id="sim-greeks-bar" class="d-none mb-3">
+      <div class="d-flex gap-4 flex-wrap">
+        <div>
+          <span class="text-muted small fw-semibold text-uppercase">Delta</span>
+          <div class="fw-bold fs-5" id="sim-g-delta">0</div>
+        </div>
+        <div>
+          <span class="text-muted small fw-semibold text-uppercase">Gamma</span>
+          <div class="fw-bold fs-5" id="sim-g-gamma">0</div>
+        </div>
+        <div>
+          <span class="text-muted small fw-semibold text-uppercase">Vega</span>
+          <div class="fw-bold fs-5" id="sim-g-vega">$0</div>
+        </div>
+        <div>
+          <span class="text-muted small fw-semibold text-uppercase">Theta</span>
+          <div class="fw-bold fs-5" id="sim-g-theta">$0/day</div>
+        </div>
+      </div>
+    </div>
+
+    {# Loaded positions table (same style as Position Legs in Payoff tab) #}
+    <div id="sim-positions-section" class="d-none">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="fw-bold" style="font-size:1.05rem;">Loaded Positions</span>
+        <span class="badge rounded-pill" style="background:#0d6efd; font-size:.85rem;" id="sim-total-count">0</span>
+      </div>
+      <p class="text-muted mb-3" style="font-size:.8rem;">Editable positions for simulation. Adjust lots, limits, and IV as needed.</p>
+
+      <table class="table align-middle mb-0" style="font-size:1.25rem; border-collapse:separate; border-spacing:0;">
+        <thead>
+          <tr style="border-bottom: 2px solid #dee2e6; font-size:1.2rem;">
+            <th style="padding:1rem 1.25rem;">Contract</th>
+            <th style="padding:1rem 1.25rem;">Net Lots</th>
+            <th style="padding:1rem 1.25rem;">Trade Price</th>
+            <th style="padding:1rem 1.25rem;">Sett-1</th>
+            <th style="padding:1rem 1.25rem;">Lower Limit</th>
+            <th style="padding:1rem 1.25rem;">Upper Limit</th>
+            <th style="padding:1rem 1.25rem;">IV %</th>
+            <th style="padding:1rem 1.25rem;">Vol Low %</th>
+            <th style="padding:1rem 1.25rem;">Vol High %</th>
+            <th style="padding:1rem 1.25rem;">Delta</th>
+            <th style="padding:1rem 1.25rem;">Gamma</th>
+            <th style="padding:1rem 1.25rem;">Vega ($)</th>
+            <th style="padding:1rem 1.25rem;">Theta ($)</th>
+            <th style="padding:1rem 1.25rem;"></th>
+          </tr>
+        </thead>
+        <tbody id="sim-positions-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Theta Decay Timeline ───────────────────────────────────────────── #}
+<div id="sim-theta-section" style="display:none;">
+  <div class="card mb-3 opt-card-lift">
+    <div class="card-body">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <h6 class="fw-semibold mb-0">Theta Decay Timeline</h6>
+        <button type="button" id="sim-theta-btn" class="btn btn-sm btn-action"
+                style="background:#003B71; color:white; border:none;">
+          <i class="bi bi-clock-history me-1"></i>Generate Timeline
+        </button>
+        <label class="form-check-label small" style="cursor:pointer;">
+          <input type="checkbox" id="sim-theta-show-contracts" class="form-check-input me-1" checked
+                 onchange="simToggleThetaContracts(this.checked)">
+          Show Contract Breakdown
+        </label>
+      </div>
+      <p class="text-muted mb-3" style="font-size:.8rem;">Shows how daily portfolio theta evolves from today to latest option expiry. Theta typically accelerates near expiry.</p>
+      <div style="position:relative;height:400px;"><canvas id="sim-theta-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+{# ── Step 2: Run Simulation ──────────────────────────────────────────── #}
+<div class="card mb-3" id="sim-run-section" style="background:#f8f9fa; display:none;">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">Step 2: Run Simulation</h6>
+    <div class="d-flex align-items-end gap-3 flex-wrap mb-3">
+      <div>
+        <label class="form-label fw-semibold mb-1">X-Axis</label>
+        <div class="btn-group" role="group">
+          <input type="radio" class="btn-check" name="sim-xaxis" id="sim-xaxis-price" value="Price" checked>
+          <label class="btn btn-outline-secondary" for="sim-xaxis-price">Price</label>
+          <input type="radio" class="btn-check" name="sim-xaxis" id="sim-xaxis-vol" value="Volatility">
+          <label class="btn btn-outline-secondary" for="sim-xaxis-vol">Volatility</label>
+        </div>
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Commodity</label>
+        <select id="sim-xaxis-commodity" class="form-select" style="min-width:150px;"></select>
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Input Date</label>
+        <input type="date" id="sim-input-date" class="form-control" style="min-width:170px;">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">Latest Expiry Date</label>
+        <input type="date" id="sim-latest-expiry" class="form-control" style="min-width:170px;">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">No. of Dates</label>
+        <input type="number" id="sim-num-dates" class="form-control" style="width:80px;" value="5" min="2" max="20">
+      </div>
+      <div>
+        <label class="form-label fw-semibold mb-1">r (%){% if sofr_date %} <small class="text-muted" title="SOFR as of {{ sofr_date }}">SOFR</small>{% endif %}</label>
+        <input type="number" id="sim-r" step="0.01" class="form-control" style="width:100px;" value="{{ sofr_rate_pct }}">
+      </div>
+      <div>
+        <span class="text-muted small fw-semibold text-uppercase" style="letter-spacing:.06em;">Date Interval (days)</span>
+        <div class="fw-semibold mt-1" id="sim-date-interval">—</div>
+      </div>
+      <button type="button" id="sim-run-btn" class="btn btn-action"
+              style="background:#1a6b72; color:white; border:none; padding:0.5rem 1.2rem;">
+        <i class="bi bi-lightning-fill me-1"></i>Run Simulation
+      </button>
+    </div>
+
+    <div id="sim-dates-bar" class="d-flex gap-2 flex-wrap mb-2"></div>
+  </div>
+</div>
+
+{# ── Section 3: Simulation Results ───────────────────────────────────── #}
+<div id="sim-results-section" style="display:none;">
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-semibold mb-0">Simulation Results</h6>
+        <span class="text-muted small" id="sim-info"></span>
+      </div>
+      <div id="sim-chart-profit" style="height:500px;position:relative;background:#fafafa;border-radius:5px;margin-bottom:1rem;"></div>
+      <div id="sim-chart-delta" style="height:500px;position:relative;background:#fafafa;border-radius:5px;margin-bottom:1rem;"></div>
+      <div id="sim-chart-gamma" style="height:500px;position:relative;background:#fafafa;border-radius:5px;margin-bottom:1rem;"></div>
+      <div id="sim-chart-vega" style="height:500px;position:relative;background:#fafafa;border-radius:5px;margin-bottom:1rem;"></div>
+      <div id="sim-chart-theta" style="height:500px;position:relative;background:#fafafa;border-radius:5px;"></div>
+    </div>
+  </div>
+
+  {# Profit data table #}
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.06em;">Profit Data Table</div>
+      <div class="table-responsive" id="sim-profit-table-wrap"></div>
+    </div>
+  </div>
+</div>
+
+{# ── Stack & Compare ──────────────────────────────────────────────────── #}
+<div id="sim-stack-section" style="display:none;">
+  <div class="card mb-3">
+    <div class="card-body">
+      <h6 class="fw-semibold mb-3">Stack & Compare</h6>
+      <div class="d-flex align-items-end gap-3 flex-wrap mb-3">
+        <div>
+          <label class="form-label fw-semibold mb-1">Label</label>
+          <input type="text" id="sim-stack-label" class="form-control" style="min-width:200px;" placeholder="e.g. Base Case">
+        </div>
+        <button type="button" id="sim-stack-save-btn" class="btn btn-outline-primary">
+          <i class="bi bi-bookmark-plus me-1"></i>Save to Stack
+        </button>
+        <button type="button" id="sim-stack-clear-btn" class="btn btn-outline-danger btn-sm">
+          Clear All
+        </button>
+      </div>
+      <div id="sim-stack-list" class="mb-3"></div>
+      <div class="row g-3" id="sim-stack-charts-wrap" style="display:none;">
+        <div class="col-md-6"><div style="position:relative;height:300px;"><canvas id="sim-stack-profit"></canvas></div></div>
+        <div class="col-md-6"><div style="position:relative;height:300px;"><canvas id="sim-stack-delta"></canvas></div></div>
+        <div class="col-md-6"><div style="position:relative;height:300px;"><canvas id="sim-stack-gamma"></canvas></div></div>
+        <div class="col-md-6"><div style="position:relative;height:300px;"><canvas id="sim-stack-vega"></canvas></div></div>
+        <div class="col-md-6 mx-auto"><div style="position:relative;height:300px;"><canvas id="sim-stack-theta"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Simulator JavaScript ────────────────────────────────────────────── #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script>
+(function () {
+  /* ── Helpers ─────────────────────────────────────────────────────────── */
+  const _COLORS = [
+    '#1a6b72','#e6a817','#d94f3d','#5b7fd4','#2eac69',
+    '#9b59b6','#e67e22','#1abc9c','#e74c3c','#3498db',
+  ];
+  function fmtPnl(v) {
+    const a = Math.abs(v);
+    const f = '$' + a.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    return v < 0 ? '-' + f : f;
+  }
+  function fmtNum(v, d) { return v != null ? v.toFixed(d) : '—'; }
+  function fmtContract(c) {
+    if (!c || c.length < 3) return c || '';
+    if (c[2] === ' ') return c;
+    const pfx = c.substring(0, 2).toUpperCase();
+    if (pfx === 'SB' || pfx === 'SW') return c.substring(0, 2) + ' ' + c.substring(2);
+    return c;
+  }
+  function parseDateLocal(iso) { const [y,m,d] = iso.split('-').map(Number); return new Date(y,m-1,d); }
+  function fmtDate(dt) { return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+
+  let simData = null;       // last simulation results
+  let simCharts = {};       // chart instances
+  let stackCharts = {};     // stack chart instances
+  let thetaChart = null;
+
+  /* ── Load Positions ──────────────────────────────────────────────────── */
+  document.getElementById('sim-load-btn').addEventListener('click', simLoadPositions);
+
+  // Push the currently-selected sim trade IDs into the URL so they survive
+  // a navbar toggle / page reload (mirrors how Payoff 1 stores trade_id in
+  // its GET form). Uses replaceState so we don't pollute browser history.
+  function simSyncUrl() {
+    const ids = Array.from(document.querySelectorAll('.sim-trade-id-sel'))
+      .map(s => s.value).filter(v => v);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('sim_trade_id');
+    ids.forEach(id => url.searchParams.append('sim_trade_id', id));
+    window.history.replaceState({}, '', url.toString());
+  }
+
+  // Auto-load whenever a trade ID dropdown changes
+  document.querySelectorAll('.sim-trade-id-sel').forEach(sel => {
+    sel.addEventListener('change', () => {
+      simSyncUrl();
+      const anySelected = Array.from(document.querySelectorAll('.sim-trade-id-sel'))
+        .some(s => s.value);
+      if (anySelected) simLoadPositions();
+    });
+  });
+
+  // On page load, restore sim trade IDs from URL params (e.g. after a navbar
+  // toggle) and auto-load positions if any are present.
+  (function simRestoreFromUrl() {
+    const params = new URL(window.location.href).searchParams;
+    const ids = params.getAll('sim_trade_id').filter(v => v);
+    if (!ids.length) return;
+    const selects = document.querySelectorAll('.sim-trade-id-sel');
+    ids.forEach((id, i) => {
+      if (i < selects.length) selects[i].value = id;
+    });
+    // Defer until after the rest of the DOMContentLoaded handlers run, so
+    // simLoadPositions sees the populated dropdowns.
+    setTimeout(simLoadPositions, 0);
+  })();
+
+  async function simLoadPositions() {
+    const btn = document.getElementById('sim-load-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Loading...';
+
+    try {
+      const tradeIds = Array.from(document.querySelectorAll('.sim-trade-id-sel'))
+        .map(s => s.value).filter(v => v);
+      const resp = await fetch('/options/sim/load-positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trade_ids: tradeIds }),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).error || 'Load failed');
+      const data = await resp.json();
+
+      simRenderPositions(data.futures, data.options);
+      simUpdateGreeks(data.greeks_summary);
+
+      // Populate commodity dropdown
+      const sel = document.getElementById('sim-xaxis-commodity');
+      sel.innerHTML = '';
+      data.futures.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.contract;
+        opt.textContent = fmtContract(f.contract);
+        sel.appendChild(opt);
+      });
+
+      // Show UI sections
+      document.getElementById('sim-positions-section').classList.remove('d-none');
+      document.getElementById('sim-greeks-bar').classList.remove('d-none');
+      document.getElementById('sim-theta-section').style.display = '';
+      document.getElementById('sim-run-section').style.display = '';
+      document.getElementById('sim-reset-limits-btn').style.display = '';
+      document.getElementById('sim-stack-section').style.display = '';
+
+      simInitDates(data.options);
+
+      // Auto-generate theta decay timeline
+      simThetaDecay();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Load Positions';
+    }
+  }
+
+  function simRenderPositions(futures, options) {
+    const tbody = document.getElementById('sim-positions-body');
+    const total = futures.length + options.length;
+    document.getElementById('sim-total-count').textContent = total;
+    tbody.innerHTML = '';
+
+    const pad = 'padding:1.1rem 1.25rem;';
+    const grpStyle = 'background:#f8f9fa; border-bottom:2px solid #dee2e6;';
+    const grpTd = 'padding:.6rem 1.25rem; font-weight:700; font-size:1.05rem; color:#495057; letter-spacing:.04em;';
+
+    function greekColor(v) { return v >= 0 ? 'color:#198754' : 'color:#dc3545'; }
+    function fmtGreek(v, d) { return v != null ? Number(v).toLocaleString('en-US', {maximumFractionDigits:d, minimumFractionDigits:d}) : '—'; }
+
+    // ── Futures group ──
+    if (futures.length) {
+      const hdr = document.createElement('tr');
+      hdr.style.cssText = grpStyle;
+      hdr.innerHTML = `<td colspan="14" style="${grpTd}">Futures</td>`;
+      tbody.appendChild(hdr);
+
+      futures.forEach(f => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f0f0f0';
+        tr.innerHTML = `
+          <td style="${pad} color:#0d6efd; font-weight:500;">${fmtContract(f.contract)}</td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:90px; font-size:1.1rem;" value="${f.net_lots}" step="1"
+                onchange="simUpdateFuture(${f.id},'net_lots',this.value)"></td>
+          <td style="${pad}">${fmtNum(f.avg_price, 2)}</td>
+          <td style="${pad}">${fmtNum(f.settlement, 2)}</td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:110px; font-size:1.1rem;" value="${fmtNum(f.lower_limit,2)}" step="0.01"
+                onchange="simUpdateFuture(${f.id},'lower_limit',this.value)"></td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:110px; font-size:1.1rem;" value="${fmtNum(f.upper_limit,2)}" step="0.01"
+                onchange="simUpdateFuture(${f.id},'upper_limit',this.value)"></td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad} ${greekColor(f.net_lots)}; font-weight:500;">${fmtGreek(f.net_lots, 0)}</td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><button class="btn btn-sm btn-outline-danger" onclick="simDeleteFuture(${f.id},this)"><i class="bi bi-trash"></i></button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ── Options groups (Calls then Puts) ──
+    const calls = options.filter(o => o.put_call === 'Call');
+    const puts = options.filter(o => o.put_call === 'Put');
+
+    [{ label: 'Options — Calls', items: calls }, { label: 'Options — Puts', items: puts }].forEach(group => {
+      if (!group.items.length) return;
+
+      const hdr = document.createElement('tr');
+      hdr.style.cssText = grpStyle;
+      hdr.innerHTML = `<td colspan="14" style="${grpTd}">${group.label}</td>`;
+      tbody.appendChild(hdr);
+
+      group.items.forEach(o => {
+        const ivPct = o.iv ? (o.iv * 100).toFixed(1) : '—';
+        const ivLowPct = o.iv_lower ? (o.iv_lower * 100).toFixed(1) : '—';
+        const ivHighPct = o.iv_upper ? (o.iv_upper * 100).toFixed(1) : '—';
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f0f0f0';
+        tr.innerHTML = `
+          <td style="${pad} color:#0d6efd; font-weight:500;">${fmtContract(o.contract)}</td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:90px; font-size:1.1rem;" value="${o.net_lots}" step="1"
+                onchange="simUpdateOption(${o.id},'net_lots',this.value)"></td>
+          <td style="${pad}">${fmtNum(o.avg_price, 2)}</td>
+          <td style="${pad}">${fmtNum(o.settlement, 2)}</td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:90px; font-size:1.1rem;" value="${ivPct}" step="0.1"
+                onchange="simUpdateOption(${o.id},'iv',this.value/100)"></td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:90px; font-size:1.1rem;" value="${ivLowPct}" step="0.1"
+                onchange="simUpdateOption(${o.id},'iv_lower',this.value/100)"></td>
+          <td style="${pad}"><input type="number" class="form-control" style="width:90px; font-size:1.1rem;" value="${ivHighPct}" step="0.1"
+                onchange="simUpdateOption(${o.id},'iv_upper',this.value/100)"></td>
+          <td style="${pad} ${greekColor(o.delta)}; font-weight:500;">${fmtGreek(o.delta, 0)}</td>
+          <td style="${pad} ${greekColor(o.gamma)}; font-weight:500;">${fmtGreek(o.gamma, 2)}</td>
+          <td style="${pad} ${greekColor(o.vega)}; font-weight:500;">${fmtGreek(o.vega, 0)}</td>
+          <td style="${pad} ${greekColor(o.theta)}; font-weight:500;">${fmtGreek(o.theta, 0)}</td>
+          <td style="${pad}"><button class="btn btn-sm btn-outline-danger" onclick="simDeleteOption(${o.id},this)"><i class="bi bi-trash"></i></button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+  }
+
+  function simUpdateGreeks(g) {
+    function setGreek(id, val, prefix, suffix) {
+      const el = document.getElementById(id);
+      const rounded = Math.round(val);
+      el.textContent = (prefix || '') + rounded.toLocaleString('en-US') + (suffix || '');
+      el.classList.remove('text-success', 'text-danger');
+      el.classList.add(rounded >= 0 ? 'text-success' : 'text-danger');
+    }
+    setGreek('sim-g-delta', g.delta, '', '');
+    setGreek('sim-g-gamma', g.gamma, '', '');
+    setGreek('sim-g-vega',  g.vega,  '$', '');
+    setGreek('sim-g-theta', g.theta, '$', '/day');
+  }
+
+  /* ── Inline CRUD ─────────────────────────────────────────────────────── */
+  window.simUpdateFuture = async function(id, field, val) {
+    await fetch(`/options/sim/futures/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: parseFloat(val) }),
+    });
+  };
+
+  window.simUpdateOption = async function(id, field, val) {
+    const resp = await fetch(`/options/sim/options/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: parseFloat(val) }),
+    });
+    // Update Greeks display in the row if returned
+    const data = await resp.json();
+    if (data.delta !== undefined) {
+      // Could update the row cells here if needed
+    }
+  };
+
+  function simUpdateCount() {
+    const tbody = document.getElementById('sim-positions-body');
+    // Count data rows (exclude group header rows)
+    const dataRows = tbody.querySelectorAll('tr:not([style*="background:#f8f9fa"])').length;
+    document.getElementById('sim-total-count').textContent = dataRows;
+  }
+
+  window.simDeleteFuture = async function(id, btn) {
+    await fetch(`/options/sim/futures/${id}`, { method: 'DELETE' });
+    btn.closest('tr').remove();
+    simUpdateCount();
+  };
+
+  window.simDeleteOption = async function(id, btn) {
+    await fetch(`/options/sim/options/${id}`, { method: 'DELETE' });
+    btn.closest('tr').remove();
+    simUpdateCount();
+  };
+
+  document.getElementById('sim-reset-limits-btn').addEventListener('click', async () => {
+    await fetch('/options/sim/reset-limits', { method: 'POST' });
+    simLoadPositions();  // reload to reflect reset
+  });
+
+  /* ── Date Generation (same as Payoff tab) ─────────────────────────────── */
+  function simInitDates(options) {
+    // Set Input Date to today
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    document.getElementById('sim-input-date').value = todayIso;
+
+    // Find latest option expiry and set it
+    let latest = null;
+    for (const o of options) {
+      if (o.expiry_date) {
+        const d = parseDateLocal(o.expiry_date);
+        if (!latest || d > latest) latest = d;
+      }
+    }
+    if (latest) {
+      const latestIso = `${latest.getFullYear()}-${String(latest.getMonth()+1).padStart(2,'0')}-${String(latest.getDate()).padStart(2,'0')}`;
+      document.getElementById('sim-latest-expiry').value = latestIso;
+    }
+
+    simUpdateInterval();
+  }
+
+  function simUpdateInterval() {
+    const inputDateVal = document.getElementById('sim-input-date').value;
+    const expiryVal = document.getElementById('sim-latest-expiry').value;
+    const numDates = parseInt(document.getElementById('sim-num-dates').value, 10);
+    const el = document.getElementById('sim-date-interval');
+    if (!inputDateVal || !expiryVal || isNaN(numDates) || numDates < 2) { el.textContent = '—'; return; }
+    const inputDate = parseDateLocal(inputDateVal);
+    const expiryDate = parseDateLocal(expiryVal);
+    const diffDays = Math.round((expiryDate - inputDate) / 86400000);
+    if (diffDays <= 0) { el.textContent = '—'; return; }
+    el.textContent = Math.round(diffDays / (numDates - 1)) + ' days';
+  }
+
+  document.getElementById('sim-input-date').addEventListener('input', simUpdateInterval);
+  document.getElementById('sim-latest-expiry').addEventListener('input', simUpdateInterval);
+  document.getElementById('sim-num-dates').addEventListener('input', simUpdateInterval);
+
+  function simGenerateDates() {
+    const bar = document.getElementById('sim-dates-bar');
+    bar.innerHTML = '';
+
+    const inputDateVal = document.getElementById('sim-input-date').value;
+    const expiryVal = document.getElementById('sim-latest-expiry').value;
+    const numDates = parseInt(document.getElementById('sim-num-dates').value, 10);
+    if (!inputDateVal || !expiryVal || isNaN(numDates) || numDates < 2) return [];
+
+    const inputDate = parseDateLocal(inputDateVal);
+    const expiryDate = parseDateLocal(expiryVal);
+    const totalDays = Math.round((expiryDate - inputDate) / 86400000);
+    if (totalDays <= 0) return [];
+
+    const intervalDays = totalDays / (numDates - 1);
+    const dates = [];
+    for (let i = 0; i < numDates; i++) {
+      const dt = new Date(inputDate.getTime() + i * intervalDays * 86400000);
+      const iso = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      dates.push(iso);
+      const badge = document.createElement('span');
+      badge.className = 'badge rounded-pill bg-primary';
+      badge.style.fontSize = '.95rem';
+      badge.textContent = fmtDate(dt);
+      badge.dataset.iso = iso;
+      bar.appendChild(badge);
+    }
+    return dates;
+  }
+
+  /* ── Run Simulation ──────────────────────────────────────────────────── */
+  document.getElementById('sim-run-btn').addEventListener('click', simRun);
+
+  async function simRun() {
+    const btn = document.getElementById('sim-run-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+
+    try {
+      const xAxis = document.querySelector('input[name="sim-xaxis"]:checked').value;
+      const commodityCode = document.getElementById('sim-xaxis-commodity').value;
+      const overlayDates = simGenerateDates();
+      const rPct = parseFloat(document.getElementById('sim-r').value);
+
+      if (!commodityCode) throw new Error('Select a commodity');
+      if (!overlayDates.length) throw new Error('Input Date must be before Latest Expiry Date');
+
+      const resp = await fetch('/options/sim/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          x_axis: xAxis,
+          commodity_code: commodityCode,
+          overlay_dates: overlayDates,
+          r_pct: isNaN(rPct) ? null : rPct,
+        }),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).error || 'Simulation failed');
+      simData = await resp.json();
+
+      simRenderCharts(simData);
+      simRenderTable(simData);
+      document.getElementById('sim-results-section').style.display = '';
+      document.getElementById('sim-info').textContent =
+        `${simData.commodity_code} | Current: ${simData.current_price} | ${Object.keys(simData.results).length} curves`;
+
+      // Load stacks
+      simLoadStacks();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-lightning-fill me-1"></i>Run Simulation';
+    }
+  }
+
+  /* ── Charts ──────────────────────────────────────────────────────────── */
+  function simRenderCharts(data) {
+    const metrics = ['profit', 'delta', 'gamma', 'vega', 'theta'];
+    const metricLabels = { profit: 'Profit', delta: 'Delta', gamma: 'Gamma', vega: 'Vega', theta: 'Theta' };
+    const isVol = data.x_axis !== 'Price';
+    const xLabel = isVol ? 'Implied Volatility (%)' : `${data.commodity_code} Price`;
+    const dates = Object.keys(data.results).sort();
+
+    // Destroy existing charts
+    for (const key in simCharts) { if (simCharts[key]) simCharts[key].destroy(); }
+    simCharts = {};
+
+    metrics.forEach(metric => {
+      const container = document.getElementById(`sim-chart-${metric}`);
+      container.style.display = '';
+      container.innerHTML = `<canvas id="sim-canvas-${metric}" style="width:100%!important;height:100%!important;"></canvas>`;
+
+      const ctx = document.getElementById(`sim-canvas-${metric}`).getContext('2d');
+
+      const datasets = dates.map((dt, di) => {
+        const r = data.results[dt];
+        return {
+          label: dt,
+          data: r.x_values.map((x, i) => ({ x, y: r[metric][i] })),
+          borderColor: _COLORS[di % _COLORS.length],
+          backgroundColor: _COLORS[di % _COLORS.length] + '33',
+          pointBackgroundColor: _COLORS[di % _COLORS.length],
+          fill: false,
+          tension: 0.1,
+          pointRadius: 2,
+        };
+      });
+
+      simCharts[metric] = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            title: { display: true, text: `${metricLabels[metric]} vs ${data.x_axis} (${data.commodity_code})` },
+            legend: { position: 'top', labels: { usePointStyle: true } },
+          },
+          scales: {
+            x: {
+              type: 'linear', position: 'bottom',
+              title: { display: true, text: xLabel },
+              ticks: { callback: v => isVol ? v.toFixed(1) + '%' : v.toFixed(2) },
+            },
+            y: {
+              title: { display: true, text: metricLabels[metric] },
+              ticks: { callback: v => v.toLocaleString() },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  function simRenderTable(data) {
+    const wrap = document.getElementById('sim-profit-table-wrap');
+    const dates = Object.keys(data.results).sort();
+    if (!dates.length) { wrap.innerHTML = ''; return; }
+    const r0 = data.results[dates[0]];
+    let html = '<table class="table table-bordered table-sm mb-0" style="font-size:.85rem;white-space:nowrap;">';
+    html += '<thead><tr><th style="background:#f8f9fa;">' + (data.x_axis === 'Price' ? 'Price' : 'Vol %') + '</th>';
+    dates.forEach(dt => { html += `<th style="background:#f8f9fa;text-align:center;">${fmtDate(parseDateLocal(dt))}</th>`; });
+    html += '</tr></thead><tbody>';
+    const isVolTable = data.x_axis !== 'Price';
+    r0.x_values.forEach((x, i) => {
+      html += `<tr><td style="font-weight:600;">${isVolTable ? x.toFixed(1) + '%' : x.toFixed(2)}</td>`;
+      dates.forEach(dt => {
+        const v = data.results[dt].profit[i];
+        const color = v >= 0 ? '#198754' : '#dc3545';
+        html += `<td style="text-align:right;color:${color};">${fmtPnl(v)}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }
+
+  /* ── Theta Decay ─────────────────────────────────────────────────────── */
+  const _THETA_COLORS = [
+    '#2196F3','#4CAF50','#FF9800','#9C27B0','#00BCD4',
+    '#F44336','#8BC34A','#FF5722','#3F51B5','#CDDC39',
+    '#E91E63','#009688','#FFC107','#673AB7','#795548',
+  ];
+  let thetaData = null;
+
+  document.getElementById('sim-theta-btn').addEventListener('click', simThetaDecay);
+
+  async function simThetaDecay() {
+    const btn = document.getElementById('sim-theta-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
+    try {
+      const resp = await fetch('/options/sim/theta-decay', { method: 'POST' });
+      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
+      thetaData = await resp.json();
+      simRenderTheta(thetaData);
+    } catch (e) { alert('Error: ' + e.message); }
+    finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-clock-history me-1"></i>Generate Timeline';
+    }
+  }
+
+  function simRenderTheta(data) {
+    if (thetaChart) { thetaChart.destroy(); thetaChart = null; }
+    const showContracts = document.getElementById('sim-theta-show-contracts').checked;
+
+    // Expiry annotations (vertical dashed red lines)
+    const annotations = {};
+    if (data.positions_expiring) {
+      data.positions_expiring.forEach((pe, i) => {
+        annotations['expiry' + i] = {
+          type: 'line',
+          xMin: pe.date,
+          xMax: pe.date,
+          borderColor: 'rgba(231, 76, 60, 0.6)',
+          borderWidth: 2,
+          borderDash: [5, 5],
+          label: {
+            display: true,
+            content: pe.contracts.map(fmtContract).join(', '),
+            position: 'start',
+            font: { size: 10 },
+            backgroundColor: 'rgba(231, 76, 60, 0.8)',
+          },
+        };
+      });
+    }
+
+    // Per-contract datasets
+    const contractDatasets = [];
+    if (data.contract_theta) {
+      const labels = Object.keys(data.contract_theta);
+      labels.forEach((label, i) => {
+        contractDatasets.push({
+          label: label,
+          data: data.contract_theta[label],
+          borderColor: _THETA_COLORS[i % _THETA_COLORS.length],
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          tension: 0.3,
+          pointRadius: 0,
+          yAxisID: 'y',
+          hidden: !showContracts,
+        });
+      });
+    }
+
+    thetaChart = new Chart(document.getElementById('sim-theta-chart'), {
+      type: 'line',
+      data: {
+        labels: data.dates,
+        datasets: [
+          {
+            label: 'Total Daily Theta ($/day)',
+            data: data.daily_theta,
+            borderColor: '#e74c3c',
+            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+            fill: true,
+            borderWidth: 2.5,
+            tension: 0.3,
+            pointRadius: 1,
+            yAxisID: 'y',
+          },
+          ...contractDatasets,
+          {
+            label: 'Cumulative Theta ($)',
+            data: data.cumulative_theta,
+            borderColor: '#003B71',
+            backgroundColor: 'transparent',
+            borderDash: [5, 5],
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 0,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          annotation: { annotations },
+          legend: { position: 'top', labels: { font: { size: 14 } } },
+          tooltip: {
+            titleFont: { size: 14 }, bodyFont: { size: 14 },
+            mode: 'index', intersect: false,
+            callbacks: {
+              label: function(ctx) {
+                const val = ctx.parsed.y;
+                if (val == null) return null;
+                const fmt = val.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': $' + fmt;
+                return ctx.dataset.label + ': $' + fmt + '/day';
+              },
+            },
+          },
+        },
+        scales: {
+          x: { title: { display: true, text: 'Date', font: { size: 15 } }, ticks: { maxTicksLimit: 20, font: { size: 14 } } },
+          y: { title: { display: true, text: 'Daily Theta ($/day)', font: { size: 15 } }, position: 'left', ticks: { font: { size: 14 } } },
+          y1: { title: { display: true, text: 'Cumulative Theta ($)', font: { size: 15 } }, position: 'right', ticks: { font: { size: 14 } }, grid: { drawOnChartArea: false } },
+        },
+      },
+    });
+  }
+
+  window.simToggleThetaContracts = function(show) {
+    if (!thetaChart) return;
+    // Toggle all per-contract datasets (skip first = total, skip last = cumulative)
+    for (let i = 1; i < thetaChart.data.datasets.length - 1; i++) {
+      thetaChart.data.datasets[i].hidden = !show;
+    }
+    thetaChart.update();
+  };
+
+  /* ── Stack & Compare ─────────────────────────────────────────────────── */
+  document.getElementById('sim-stack-save-btn').addEventListener('click', simSaveStack);
+  document.getElementById('sim-stack-clear-btn').addEventListener('click', simClearStacks);
+
+  async function simSaveStack() {
+    if (!simData) { alert('Run a simulation first'); return; }
+    const label = document.getElementById('sim-stack-label').value.trim() || 'Untitled';
+    await fetch('/options/sim/stacks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        label, x_axis: simData.x_axis, commodity_code: simData.commodity_code, data: simData.results,
+      }),
+    });
+    document.getElementById('sim-stack-label').value = '';
+    simLoadStacks();
+  }
+
+  async function simLoadStacks() {
+    const resp = await fetch('/options/sim/stacks');
+    const stacks = await resp.json();
+    const list = document.getElementById('sim-stack-list');
+    if (!stacks.length) {
+      list.innerHTML = '<span class="text-muted small">No saved simulations.</span>';
+      document.getElementById('sim-stack-charts-wrap').style.display = 'none';
+      return;
+    }
+    let html = '<div class="d-flex gap-2 flex-wrap">';
+    stacks.forEach(s => {
+      html += `<span class="badge bg-secondary" style="font-size:.85rem;">
+        ${s.label}
+        <button class="btn-close btn-close-white ms-2" style="font-size:.6rem;" onclick="simDeleteStack(${s.id})"></button>
+      </span>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+
+    simRenderStackCharts(stacks);
+  }
+
+  window.simDeleteStack = async function(id) {
+    await fetch(`/options/sim/stacks/${id}`, { method: 'DELETE' });
+    simLoadStacks();
+  };
+
+  async function simClearStacks() {
+    const resp = await fetch('/options/sim/stacks');
+    const stacks = await resp.json();
+    for (const s of stacks) {
+      await fetch(`/options/sim/stacks/${s.id}`, { method: 'DELETE' });
+    }
+    simLoadStacks();
+  }
+
+  function simRenderStackCharts(stacks) {
+    if (!stacks.length) return;
+    document.getElementById('sim-stack-charts-wrap').style.display = '';
+
+    const metrics = ['profit', 'delta', 'gamma', 'vega', 'theta'];
+    const labels = ['Profit (USD)', 'Delta', 'Gamma', 'Vega (USD)', 'Theta (USD/day)'];
+    const stackColors = ['#1a6b72','#e6a817','#d94f3d','#5b7fd4','#2eac69','#9b59b6','#e67e22','#1abc9c'];
+
+    metrics.forEach((metric, mi) => {
+      const canvasId = `sim-stack-${metric}`;
+      if (stackCharts[metric]) { stackCharts[metric].destroy(); stackCharts[metric] = null; }
+
+      const datasets = [];
+      stacks.forEach((stack, si) => {
+        const color = stackColors[si % stackColors.length];
+        const dates = Object.keys(stack.data).sort();
+        // Use the last date curve from each stack
+        const lastDate = dates[dates.length - 1];
+        if (!lastDate || !stack.data[lastDate]) return;
+        const r = stack.data[lastDate];
+        datasets.push({
+          label: stack.label,
+          data: r.x_values.map((x, i) => ({ x, y: r[metric][i] })),
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+          tension: 0.3, fill: false,
+        });
+      });
+
+      stackCharts[metric] = new Chart(document.getElementById(canvasId), {
+        type: 'line',
+        data: { datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 14, font: { size: 12 }, usePointStyle: true, pointStyle: 'line' } },
+            title: { display: true, text: labels[mi], font: { size: 13 } },
+          },
+          scales: {
+            x: { type: 'linear', title: { display: true, text: 'Price', font: { size: 12 } } },
+            y: {
+              title: { display: true, text: labels[mi], font: { size: 12 } },
+              grid: {
+                color: ctx => ctx.tick.value === 0 ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
+                lineWidth: ctx => ctx.tick.value === 0 ? 2 : 0.8,
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+})();
+</script>
+
+</div>{# end simulator-tab #}
+</div>{# end tab-content #}
+{% endblock %}

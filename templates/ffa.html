@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+{% block title %}FFA Trades - Sugar Trading{% endblock %}
+
+{% block content %}
+<style>
+  .editable-cell {
+    cursor: text;
+    position: relative;
+  }
+  .editable-cell:hover {
+    background-color: #e8f4ff !important;
+  }
+  .editable-cell:hover::after {
+    content: " ✏️";
+    font-size: 0.75em;
+    opacity: 0.6;
+  }
+  .calc-header {
+    background-color: #b8860b !important;
+  }
+</style>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0">FFA Trades</h4>
+    {% if last_synced %}
+      <small class="text-muted">Last synced: {{ last_synced.strftime('%d %b %Y %H:%M') }} UTC &mdash; {{ trades|length }} records</small>
+    {% endif %}
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addTradeModal">
+      <i class="bi bi-plus-lg me-1"></i>Add Trade
+    </button>
+    <form method="POST" action="{{ url_for('ffa.sync') }}">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-repeat me-1"></i>Sync from Excel
+      </button>
+    </form>
+    <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
+      <span style="display:inline-block;padding:1px 6px;background:#343a40;color:#fff;border-radius:2px;font-size:11px;font-weight:600;">COL</span><span class="text-muted">Editable</span>
+      <span style="display:inline-block;padding:1px 6px;background:#b8860b;color:#fff;border-radius:2px;font-size:11px;font-weight:600;margin-left:6px;">COL</span><span class="text-muted">Calculated</span>
+    </span>
+  </div>
+</div>
+
+<!-- PnL summary card -->
+<div class="d-flex gap-3 mb-3">
+  <div class="card px-4 py-2">
+    <small class="text-muted">Total FFA PnL</small>
+    <div class="fs-4 fw-bold
+      {%- if total_pnl is not none and total_pnl > 0 %} text-success
+      {%- elif total_pnl is not none and total_pnl < 0 %} text-danger
+      {%- endif %}">
+      {% if total_pnl is not none %}{{ "%.2f"|format(total_pnl) }}{% else %}&mdash;{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Unsaved changes bar -->
+<div id="saveBar" class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="display:none!important;">
+  <i class="bi bi-pencil-square"></i>
+  <span><strong id="pendingCount">0</strong> unsaved change(s)</span>
+  <button class="btn btn-primary btn-sm ms-auto" id="saveAllBtn">
+    <i class="bi bi-floppy me-1"></i>Save All Changes
+  </button>
+  <button class="btn btn-outline-secondary btn-sm" id="discardAllBtn">
+    Discard
+  </button>
+</div>
+
+<div class="d-flex gap-4 align-items-start flex-wrap">
+
+  {% if trades %}
+  <div class="card d-inline-block">
+    <table class="table table-hover mb-0" style="width: auto; font-size: 1rem;" id="ffaTable">
+      <thead class="table-dark">
+        <tr>
+          <th style="width:32px;">
+            <input type="checkbox" id="selectAll" title="Select all">
+          </th>
+          <th>Date</th>
+          <th>Shipment</th>
+          <th>Size</th>
+          <th>Long</th>
+          <th>Short</th>
+          <th class="calc-header">Position</th>
+          <th>Trade Price</th>
+          <th class="calc-header">Settlement</th>
+          <th class="calc-header">PnL</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in trades %}
+          <tr data-id="{{ row.id }}" data-table="trade">
+            <td>
+              <input type="checkbox" class="row-check" value="{{ row.id }}">
+            </td>
+            <td class="editable-cell" data-field="trade_date" data-value="{{ row.trade_date }}" data-table="trade">{{ row.trade_date }}</td>
+            <td class="editable-cell" data-field="shipment" data-value="{{ row.shipment }}" data-table="trade">{{ row.shipment }}</td>
+            <td class="editable-cell" data-field="size" data-value="{{ row.size }}" data-table="trade">{{ row.size }}</td>
+            <td class="editable-cell text-end" data-field="long_" data-value="{{ row.long_ if row.long_ is not none else '' }}" data-table="trade">{{ row.long_ if row.long_ is not none else '' }}</td>
+            <td class="editable-cell text-end" data-field="short_" data-value="{{ row.short_ if row.short_ is not none else '' }}" data-table="trade">{{ row.short_ if row.short_ is not none else '' }}</td>
+            <td class="text-end">
+              {%- if row.long_ is not none and row.short_ is not none -%}
+                {{ row.long_ - row.short_ }}
+              {%- elif row.long_ is not none -%}
+                {{ row.long_ }}
+              {%- elif row.short_ is not none -%}
+                {{ -row.short_ }}
+              {%- endif -%}
+            </td>
+            <td class="editable-cell text-end" data-field="trade_price" data-value="{{ row.trade_price if row.trade_price is not none else '' }}" data-table="trade">{{ row.trade_price if row.trade_price is not none else '' }}</td>
+            {%- set s_row = settlement_lookup.get(row.shipment.strip().lower(), {}) -%}
+            {%- set s_val = s_row.get(row.size.strip().lower()) -%}
+            <td class="text-end">{{ s_val if s_val is not none else '' }}</td>
+            {%- if s_val is not none and row.trade_price is not none and (row.long_ is not none or row.short_ is not none) -%}
+              {%- set pnl = (s_val - row.trade_price) * ((row.long_ or 0) - (row.short_ or 0)) -%}
+              <td class="text-end">{{ pnl }}</td>
+            {%- else -%}
+              <td class="text-end"></td>
+            {%- endif -%}
+            <td>
+              <form method="POST" action="{{ url_for('ffa.delete', trade_id=row.id) }}" style="display:inline;">
+                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1"
+                  onclick="return confirm('Delete this trade?')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-inbox fs-1"></i>
+    <p class="mt-2">No data yet. Add a trade manually or <strong>Sync from Excel</strong>.</p>
+  </div>
+  {% endif %}
+
+  {% if settlements %}
+  <div class="card d-inline-block">
+    <table class="table table-hover mb-0" style="width: auto; font-size: 1rem;" id="settlementTable">
+      <thead class="table-dark">
+        <tr>
+          <th>Shipment</th>
+          <th>SMX</th>
+          <th>PMX</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in settlements %}
+          <tr data-id="{{ row.id }}" data-table="settlement">
+            <td>{{ row.shipment }}</td>
+            <td class="editable-cell text-end" data-field="smx" data-value="{{ row.smx if row.smx is not none else '' }}" data-table="settlement">{{ row.smx if row.smx is not none else '' }}</td>
+            <td class="editable-cell text-end" data-field="pmx" data-value="{{ row.pmx if row.pmx is not none else '' }}" data-table="settlement">{{ row.pmx if row.pmx is not none else '' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Add Trade Modal -->
+<div class="modal fade" id="addTradeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('ffa.add') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Add FFA Trade</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Date <span class="text-danger">*</span></label>
+            <input type="date" name="trade_date" class="form-control form-control-sm" required>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col">
+              <label class="form-label">Shipment <span class="text-danger">*</span></label>
+              <input type="text" name="shipment" class="form-control form-control-sm" placeholder="e.g. Jan" required>
+            </div>
+            <div class="col">
+              <label class="form-label">Size <span class="text-danger">*</span></label>
+              <input type="text" name="size" class="form-control form-control-sm" placeholder="e.g. SMX or PMX" required>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col">
+              <label class="form-label">Long</label>
+              <input type="number" name="long_" class="form-control form-control-sm" step="any" min="0">
+            </div>
+            <div class="col">
+              <label class="form-label">Short</label>
+              <input type="number" name="short_" class="form-control form-control-sm" step="any" min="0">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Trade Price</label>
+            <input type="number" name="trade_price" class="form-control form-control-sm" step="any">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-sm">Add Trade</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk scope modal (trades table only) -->
+<div class="modal fade" id="bulkApplyModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0">Apply change to&hellip;</h6>
+      </div>
+      <div class="modal-body py-2">
+        <p class="mb-2 small text-muted" id="bulkApplyMsg"></p>
+        <div class="d-grid gap-2">
+          <button class="btn btn-outline-primary btn-sm" id="applyThisRow">This row only</button>
+          <button class="btn btn-primary btn-sm" id="applyAllSelected">All selected rows (<span id="selectedCount">0</span>)</button>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" id="cancelApply">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const NUMERIC_FIELDS = new Set(["long_", "short_", "trade_price", "smx", "pmx"]);
+  const DIRTY_COLOR = "#fff8d6";
+
+  const TRADE_URL = "{{ url_for('ffa.api_update') }}";
+  const SETTLEMENT_URL = "{{ url_for('ffa.api_update_settlement') }}";
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let editingCell = null;
+  let pendingEdit = null;
+  // pendingChanges: key = `${table}|${rowId}|${field}`, value = {table, record_id, field, value}
+  const pendingChanges = {};
+
+  // ── Select-all checkbox ────────────────────────────────────────────────────
+  document.getElementById("selectAll")?.addEventListener("change", function () {
+    document.querySelectorAll(".row-check").forEach(cb => cb.checked = this.checked);
+  });
+
+  // ── Cell click → open editor ───────────────────────────────────────────────
+  document.querySelectorAll(".editable-cell").forEach(td => {
+    td.addEventListener("click", function () {
+      if (editingCell && editingCell.td === td) return;
+      if (editingCell) commitEdit(editingCell);
+
+      const field = td.dataset.field;
+      const table = td.dataset.table;
+      const currentValue = td.dataset.value;
+      editingCell = { td, rowId: td.closest("tr").dataset.id, field, table, originalValue: currentValue };
+
+      const isNumeric = NUMERIC_FIELDS.has(field);
+      const input = document.createElement("input");
+      input.type = isNumeric ? "number" : "text";
+      input.step = "any";
+      input.value = currentValue;
+      input.className = "form-control" + (isNumeric ? " text-end" : "");
+      input.style.minWidth = isNumeric ? "80px" : "90px";
+
+      td.textContent = "";
+      td.appendChild(input);
+      input.focus();
+      input.select();
+
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter")  { e.preventDefault(); commitEdit(editingCell); }
+        if (e.key === "Escape") { e.preventDefault(); cancelEdit(editingCell); }
+      });
+      input.addEventListener("blur", function () {
+        setTimeout(() => { if (editingCell) commitEdit(editingCell); }, 150);
+      });
+    });
+  });
+
+  // Click outside → close editor
+  document.addEventListener("click", function (e) {
+    if (editingCell && !e.target.closest("#ffaTable") && !e.target.closest("#settlementTable") && !e.target.closest("#bulkApplyModal")) {
+      commitEdit(editingCell);
+    }
+  });
+
+  // ── Commit / cancel ────────────────────────────────────────────────────────
+  function cancelEdit(state) {
+    editingCell = null;
+    state.td.textContent = state.td.dataset.value;
+  }
+
+  function commitEdit(state) {
+    editingCell = null;
+    const input = state.td.querySelector("input");
+    if (!input) return;
+    const newValue = input.value.trim();
+
+    if (newValue === state.originalValue) {
+      state.td.textContent = state.originalValue;
+      return;
+    }
+
+    // Bulk apply only for trades table (has checkboxes)
+    if (state.table === "trade") {
+      const checkedIds = getCheckedIds();
+      const isCurrentSelected = checkedIds.includes(state.rowId);
+      if (checkedIds.length > 1 && isCurrentSelected) {
+        pendingEdit = { rowId: state.rowId, field: state.field, table: state.table, value: newValue };
+        state.td.textContent = state.td.dataset.value;
+        showBulkModal(checkedIds.length, state.field, newValue);
+        return;
+      }
+    }
+
+    stageChange(state.table, state.rowId, state.field, newValue);
+  }
+
+  // ── Stage a change ─────────────────────────────────────────────────────────
+  function stageChange(table, rowId, field, value) {
+    const key = `${table}|${rowId}|${field}`;
+    pendingChanges[key] = { table, record_id: parseInt(rowId), field, value };
+    const tableEl = table === "settlement" ? "#settlementTable" : "#ffaTable";
+    const tr = document.querySelector(`${tableEl} tr[data-id="${rowId}"]`);
+    if (tr) {
+      const td = tr.querySelector(`.editable-cell[data-field="${field}"]`);
+      if (td) {
+        td.textContent = value;
+        td.dataset.value = value;
+        td.style.backgroundColor = DIRTY_COLOR;
+      }
+    }
+    updateSaveBar();
+  }
+
+  function clearDirty() {
+    document.querySelectorAll(".editable-cell").forEach(td => td.style.backgroundColor = "");
+  }
+
+  // ── Save bar ───────────────────────────────────────────────────────────────
+  function updateSaveBar() {
+    const count = Object.keys(pendingChanges).length;
+    const bar = document.getElementById("saveBar");
+    if (count > 0) {
+      bar.style.removeProperty("display");
+      bar.style.display = "flex";
+      document.getElementById("pendingCount").textContent = count;
+    } else {
+      bar.style.setProperty("display", "none", "important");
+    }
+  }
+
+  document.getElementById("saveAllBtn")?.addEventListener("click", function () {
+    const all = Object.values(pendingChanges);
+    if (!all.length) return;
+
+    const tradeChanges = all.filter(c => c.table === "trade").map(({record_id, field, value}) => ({record_id, field, value}));
+    const settlementChanges = all.filter(c => c.table === "settlement").map(({record_id, field, value}) => ({record_id, field, value}));
+
+    const requests = [];
+    if (tradeChanges.length) requests.push(fetch(TRADE_URL, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({changes: tradeChanges}) }).then(r => r.json()));
+    if (settlementChanges.length) requests.push(fetch(SETTLEMENT_URL, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({changes: settlementChanges}) }).then(r => r.json()));
+
+    Promise.all(requests)
+      .then(results => {
+        const failed = results.find(r => !r.ok);
+        if (failed) {
+          alert("Save failed: " + (failed.error || "Unknown error"));
+          location.reload();
+        } else {
+          Object.keys(pendingChanges).forEach(k => delete pendingChanges[k]);
+          clearDirty();
+          updateSaveBar();
+        }
+      })
+      .catch(() => { alert("Network error. Reloading."); location.reload(); });
+  });
+
+  document.getElementById("discardAllBtn")?.addEventListener("click", () => location.reload());
+
+  // ── Bulk scope modal ───────────────────────────────────────────────────────
+  let bulkModal = null;
+  function getBulkModal() {
+    if (!bulkModal) bulkModal = new bootstrap.Modal(document.getElementById("bulkApplyModal"));
+    return bulkModal;
+  }
+
+  function showBulkModal(count, field, value) {
+    const label = { trade_date: "Date", shipment: "Shipment", size: "Size",
+                    long_: "Long", short_: "Short", trade_price: "Trade Price" }[field] || field;
+    document.getElementById("bulkApplyMsg").textContent = `Set ${label} to "${value || "(blank)"}"`;
+    document.getElementById("selectedCount").textContent = count;
+    getBulkModal().show();
+  }
+
+  document.getElementById("applyThisRow")?.addEventListener("click", function () {
+    getBulkModal().hide();
+    if (!pendingEdit) return;
+    const { rowId, field, table, value } = pendingEdit;
+    pendingEdit = null;
+    stageChange(table, rowId, field, value);
+  });
+
+  document.getElementById("applyAllSelected")?.addEventListener("click", function () {
+    getBulkModal().hide();
+    if (!pendingEdit) return;
+    const { field, table, value } = pendingEdit;
+    pendingEdit = null;
+    getCheckedIds().forEach(id => stageChange(table, id, field, value));
+  });
+
+  document.getElementById("cancelApply")?.addEventListener("click", function () {
+    getBulkModal().hide();
+    pendingEdit = null;
+  });
+
+  function getCheckedIds() {
+    return Array.from(document.querySelectorAll(".row-check:checked")).map(cb => cb.value);
+  }
+})();
+</script>
+{% endblock %}

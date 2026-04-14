@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Sugar Trading{% endblock %}
+
+{% block content %}
+<div class="container">
+<style>
+  :root {
+    --dash-bg-card:    #ffffff;
+    --dash-border:     #e9ecef;
+    --dash-label:      #6b7280;
+    --dash-heading:    #111827;
+    --dash-positive:   #16a34a;
+    --dash-negative:   #dc2626;
+    --dash-mute-c:     #9ca3af;
+    --dash-warn:       #ea580c;
+  }
+  .dash-pos  { color: var(--dash-positive); }
+  .dash-neg  { color: var(--dash-negative); }
+  .dash-mute { color: var(--dash-mute-c); }
+
+  /* ── Mixed-fallback warning chip (shown when live mode has gaps) ──── */
+  .dash-warn-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #fff7ed;
+    color: var(--dash-warn);
+    border: 1px solid #fed7aa;
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-left: 0.75rem;
+  }
+
+  /* ── Hero ─────────────────────────────────────────────────────────── */
+  .dash-hero { border: none; }
+  .dash-hero-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--dash-label);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .dash-hero-value {
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 0.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dash-hero-deltas {
+    display: flex;
+    gap: 2.5rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .dash-delta { display: flex; flex-direction: column; }
+  .dash-delta-period {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+    color: var(--dash-label);
+    font-weight: 600;
+  }
+  .dash-delta-value {
+    font-size: 1.05rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Slim admin strip ─────────────────────────────────────────────── */
+  .dash-strip { border: none; }
+  .dash-strip-row {
+    display: flex;
+    gap: 2.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .dash-strip-cell {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .dash-strip-label {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    color: var(--dash-label);
+    font-weight: 600;
+  }
+  .dash-strip-value {
+    font-size: 0.95rem;
+    color: var(--dash-heading);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Bottom row: 3-column grid ────────────────────────────────────── */
+  .dash-bottom-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  @media (max-width: 991.98px) {
+    .dash-bottom-row { grid-template-columns: 1fr; }
+  }
+  .dash-bot-card { border: none; }
+  .dash-bot-title {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
+    color: var(--dash-label);
+    font-weight: 700;
+    margin-bottom: 0.85rem;
+  }
+
+  /* Clean borderless table for Exposure */
+  .dash-clean-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  .dash-clean-table td {
+    padding: 0.55rem 0.25rem;
+    border-bottom: 1px solid var(--dash-border);
+  }
+  .dash-clean-table tr:last-child td { border-bottom: none; }
+  .dash-clean-table .dash-label-cell {
+    color: var(--dash-label);
+    text-align: left;
+  }
+  .dash-clean-table .dash-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--dash-heading);
+  }
+  .dash-clean-table tr.dash-total td {
+    border-top: 2px solid var(--dash-heading);
+    border-bottom: none;
+    padding-top: 0.75rem;
+    font-weight: 700;
+    color: var(--dash-heading);
+  }
+  .dash-clean-table tr.dash-total .dash-label-cell { color: var(--dash-heading); }
+
+  /* Upcoming Expiries: vertically stacked mini-cards */
+  .dash-upcoming-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .dash-mini {
+    border: 1px solid var(--dash-border);
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+  }
+  .dash-mini-label {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.68rem;
+    color: var(--dash-label);
+    font-weight: 600;
+  }
+  .dash-mini-name {
+    font-family: SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.05rem;
+    color: var(--dash-heading);
+    font-weight: 700;
+    margin-top: 0.1rem;
+  }
+  .dash-mini-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 0.25rem;
+  }
+  .dash-mini-date {
+    font-size: 0.85rem;
+    color: var(--dash-label);
+  }
+  .dash-mini-dte {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--dash-heading);
+    font-variant-numeric: tabular-nums;
+  }
+  .dash-mini-dte.dash-warn { color: var(--dash-warn); }
+
+  /* Snapshots panel */
+  .dash-snap-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .dash-snap-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--dash-border);
+  }
+  .dash-snap-row:last-of-type { border-bottom: none; }
+  .dash-snap-meta { display: flex; flex-direction: column; }
+  .dash-snap-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--dash-heading);
+  }
+  .dash-snap-time {
+    font-size: 0.78rem;
+    color: var(--dash-label);
+    margin-top: 0.1rem;
+  }
+  .dash-snap-help {
+    font-size: 0.75rem;
+    color: var(--dash-label);
+    margin-top: 0.5rem;
+    line-height: 1.3;
+  }
+</style>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <h4 class="mb-0">Dashboard</h4>
+  </div>
+  <form action="{{ url_for('sync.run_sync') }}" method="POST">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-arrow-repeat me-1"></i>Sync Now
+    </button>
+  </form>
+</div>
+
+{% if pnl_summary and pnl_summary.total_pnl is not none %}
+<div class="dash-hero card mb-3 p-4">
+  <div class="dash-hero-label">Total PNL</div>
+  <div class="dash-hero-value {% if pnl_summary.total_pnl >= 0 %}dash-pos{% else %}dash-neg{% endif %}">
+    {% if pnl_summary.total_pnl >= 0 %}${{ "{:,.0f}".format(pnl_summary.total_pnl) }}{% else %}-${{ "{:,.0f}".format(pnl_summary.total_pnl|abs) }}{% endif %}
+  </div>
+  <div class="dash-hero-deltas">
+    {% for slot, label in [('daily','Today'),('weekly','Week'),('monthly','Month')] %}
+      {% set d = pnl_changes[slot].total_pnl if pnl_changes and pnl_changes[slot] else none %}
+      <div class="dash-delta">
+        <span class="dash-delta-period">{{ label }}</span>
+        <span class="dash-delta-value {% if d is none %}dash-mute{% elif d > 0 %}dash-pos{% elif d < 0 %}dash-neg{% else %}dash-mute{% endif %}">
+          {% if d is none %}—
+          {% elif d > 0 %}+${{ "{:,.0f}".format(d) }}
+          {% elif d < 0 %}-${{ "{:,.0f}".format(d|abs) }}
+          {% else %}$0{% endif %}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="dash-strip card mb-4 px-4 py-3">
+  <div class="dash-strip-row">
+    <div class="dash-strip-cell">
+      <span class="dash-strip-label">Positions</span>
+      <span class="dash-strip-value">{{ "{:,}".format(total_positions) }}</span>
+    </div>
+    <div class="dash-strip-cell">
+      <span class="dash-strip-label">Salesforce Sync</span>
+      <span class="dash-strip-value {% if last_sync and last_sync.status == 'success' %}dash-pos{% elif last_sync and last_sync.status == 'error' %}dash-neg{% else %}dash-mute{% endif %}">
+        {{ last_sync.status|capitalize if last_sync else 'Never' }}
+      </span>
+    </div>
+    <div class="dash-strip-cell">
+      <span class="dash-strip-label">Records</span>
+      <span class="dash-strip-value">{% if last_sync %}{{ "{:,}".format(last_sync.record_count) }}{% else %}—{% endif %}</span>
+    </div>
+    <div class="dash-strip-cell">
+      <span class="dash-strip-label">Latest Trade</span>
+      <span class="dash-strip-value">{{ latest_trade_date or '—' }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- P&L Summary Table -->
+{% if pnl_summary %}
+{% macro fmt(v) %}{% if v is none %}—{% elif v >= 0 %}{{ "${:,.0f}".format(v) }}{% else %}<span style="color:#ff0000;">{{ "${:,.0f}".format(v) }}</span>{% endif %}{% endmacro %}
+{% macro fmt_delta(v) %}{% if v is none %}<span class="text-muted">—</span>{% elif v == 0 %}<span class="text-muted">$0</span>{% elif v > 0 %}+${{ "{:,.0f}".format(v) }}{% else %}<span style="color:#ff0000;">-${{ "{:,.0f}".format(v|abs) }}</span>{% endif %}{% endmacro %}
+<div class="card mt-2">
+  <style>
+    .pnl-table { width: 100%; max-width: 850px; border-collapse: collapse; font-size: 0.9rem; }
+    .pnl-table td { padding: 5px 10px; border: 1px solid #000; background: #FCE4D6; }
+    .pnl-table th { padding: 5px 10px; border: 1px solid #000; background: #FFF2CC; font-weight: bold; text-align: center; }
+    .pnl-table th:first-child { text-align: left; }
+    .pnl-table .val { text-align: center; min-width: 120px; }
+    .pnl-table .section-header td { font-weight: bold; background: #FFF2CC; }
+    .pnl-table .subtotal td { font-weight: bold; background: #B4C6E7; }
+    .pnl-table .grand-total td { font-weight: bold; background: #ffff00; font-size: 1.05em; }
+    .pnl-table .spacer td { border: none; height: 6px; background: transparent; }
+    .pnl-table tbody tr:not(.spacer):not(.section-header):not(.subtotal):not(.grand-total) td:first-child { background: #fff; }
+    .pnl-table tbody tr:not(.spacer):not(.section-header):not(.subtotal):not(.grand-total) td:nth-child(3) { background: #CCECFF; }
+    .pnl-table tbody tr:not(.spacer):not(.section-header):not(.subtotal):not(.grand-total) td:nth-child(4) { background: #CCFFCC; }
+    .pnl-table tbody tr:not(.spacer):not(.section-header):not(.subtotal):not(.grand-total) td:nth-child(5) { background: #CCCCFF; }
+    .pnl-table tbody tr:not(.spacer):not(.section-header):not(.subtotal):not(.grand-total):hover td { background: rgba(0,0,0,0.04); }
+    .snap-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .snap-table th { padding: 5px 10px; border: 1px solid #000; background: #FFF2CC; font-weight: bold; text-align: center; white-space: nowrap; }
+    .snap-table th:first-child { text-align: left; }
+    .snap-table td { padding: 5px 10px; border: 1px solid #000; background: #FCE4D6; text-align: center; white-space: nowrap; }
+    .snap-table td:first-child { background: #fff; text-align: left; }
+    .snap-table .snap-total td { font-weight: bold; background: #ffff00; }
+    .snap-table .snap-total td:first-child { background: #ffff00; }
+    .snap-table tbody tr:hover td { background: rgba(0,0,0,0.04); }
+  </style>
+  <div class="tab-switcher mx-3 mt-2" id="pnlSwitcher">
+    <button class="tab-sw-btn active" id="pnl-summary-tab" data-target="#pnl-summary-pane" type="button">
+      <i class="bi bi-cash-stack"></i>P&amp;L Summary
+    </button>
+    <button class="tab-sw-btn" id="pnl-history-tab" data-target="#pnl-history-pane" type="button">
+      <i class="bi bi-clock-history"></i>Snapshot History
+    </button>
+  </div>
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const switcher = document.getElementById('pnlSwitcher');
+    const buttons  = switcher.querySelectorAll('.tab-sw-btn');
+    const panes    = switcher.closest('.card').querySelectorAll('.tab-content > .tab-pane');
+
+    function activateTab(btn) {
+      const target = btn.getAttribute('data-target');
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      panes.forEach(p => p.classList.remove('show', 'active'));
+      const pane = document.querySelector(target);
+      if (pane) requestAnimationFrame(() => pane.classList.add('active', 'show'));
+      localStorage.setItem('dashboardPnlTab', '#' + btn.id);
+    }
+
+    buttons.forEach(btn => btn.addEventListener('click', () => activateTab(btn)));
+
+    const saved = localStorage.getItem('dashboardPnlTab');
+    if (saved) {
+      const btn = document.querySelector(saved);
+      if (btn) activateTab(btn);
+    }
+  });
+  </script>
+  <div class="tab-content p-4">
+    <div class="tab-pane show active" id="pnl-summary-pane" role="tabpanel">
+  <div style="overflow-x:auto;">
+  <table class="pnl-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Current</th>
+        <th>Daily Chg</th>
+        <th>Weekly Chg</th>
+        <th>Monthly Chg</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section-header"><td colspan="5">Summary of Alpha Book</td></tr>
+      <tr>
+        <td>Alpha M2M</td>
+        <td class="val">{{ fmt(pnl_summary.alpha_m2m) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.alpha_m2m   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.alpha_m2m  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.alpha_m2m if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr>
+        <td>Alpha PNL</td>
+        <td class="val">{{ fmt(pnl_summary.alpha_pnl) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.alpha_pnl   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.alpha_pnl  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.alpha_pnl if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr class="subtotal">
+        <td>Net Total Alpha PNL</td>
+        <td class="val">{{ fmt(pnl_summary.net_alpha_pnl) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.net_alpha_pnl   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.net_alpha_pnl  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.net_alpha_pnl if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+
+      <tr class="spacer"><td colspan="5"></td></tr>
+
+      <tr class="section-header"><td colspan="5">Summary of Whites Physical Book PNL</td></tr>
+      <tr>
+        <td>White Physical M2M</td>
+        <td class="val">{{ fmt(pnl_summary.whites_physical_m2m) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.whites_physical_m2m   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.whites_physical_m2m  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.whites_physical_m2m if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr>
+        <td>White Futures M2M</td>
+        <td class="val">{{ fmt(pnl_summary.whites_futures_m2m) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.whites_futures_m2m   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.whites_futures_m2m  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.whites_futures_m2m if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr class="subtotal">
+        <td>Whites PNL</td>
+        <td class="val">{{ fmt(pnl_summary.whites_pnl) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.whites_pnl   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.whites_pnl  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.whites_pnl if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+
+      <tr class="spacer"><td colspan="5"></td></tr>
+
+      <tr class="section-header"><td colspan="5">Summary of Raws Physical Book PNL</td></tr>
+      <tr>
+        <td>Raws Physical M2M</td>
+        <td class="val">{{ fmt(pnl_summary.raws_physical_m2m) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.raws_physical_m2m   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.raws_physical_m2m  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.raws_physical_m2m if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr>
+        <td>Raws Futures M2M</td>
+        <td class="val">{{ fmt(pnl_summary.raws_futures_m2m) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.raws_futures_m2m   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.raws_futures_m2m  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.raws_futures_m2m if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr>
+        <td>FFA M2M</td>
+        <td class="val">{{ fmt(pnl_summary.ffa_m2m) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.ffa_m2m   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.ffa_m2m  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.ffa_m2m if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+      <tr class="subtotal">
+        <td>Net Raws PNL</td>
+        <td class="val">{{ fmt(pnl_summary.net_raws_pnl) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.net_raws_pnl   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.net_raws_pnl  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.net_raws_pnl if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+
+      <tr class="spacer"><td colspan="5"></td></tr>
+
+      <tr class="grand-total">
+        <td>Total PNL</td>
+        <td class="val">{{ fmt(pnl_summary.total_pnl) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.daily.total_pnl   if pnl_changes and pnl_changes.daily   else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.weekly.total_pnl  if pnl_changes and pnl_changes.weekly  else none) }}</td>
+        <td class="val">{{ fmt_delta(pnl_changes.monthly.total_pnl if pnl_changes and pnl_changes.monthly else none) }}</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+    </div><!-- end summary pane -->
+
+    <div class="tab-pane" id="pnl-history-pane" role="tabpanel">
+      <div style="overflow-x:auto;">
+      <table class="pnl-table">
+        <thead>
+          <tr>
+            <th></th>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}
+            <th>
+              {{ slot|capitalize }} Snapshot<br>
+              <span style="font-weight:normal; font-size:1em;">
+                {% if snap_slots.get(slot) %}{{ snap_slots[slot].data.get('as_of_date') or '—' }}{% else %}Not saved{% endif %}
+              </span>
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="section-header"><td colspan="4">Summary of Alpha Book</td></tr>
+          <tr>
+            <td>Alpha M2M</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('alpha_m2m') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr>
+            <td>Alpha PNL</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('alpha_pnl') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr class="subtotal">
+            <td>Net Total Alpha PNL</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('net_alpha_pnl') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+
+          <tr class="spacer"><td colspan="4"></td></tr>
+
+          <tr class="section-header"><td colspan="4">Summary of Whites Physical Book PNL</td></tr>
+          <tr>
+            <td>White Physical M2M</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('whites_physical_m2m') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr>
+            <td>White Futures M2M</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('whites_futures_m2m') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr class="subtotal">
+            <td>Whites PNL</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('whites_pnl') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+
+          <tr class="spacer"><td colspan="4"></td></tr>
+
+          <tr class="section-header"><td colspan="4">Summary of Raws Physical Book PNL</td></tr>
+          <tr>
+            <td>Raws Physical M2M</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('raws_physical_m2m') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr>
+            <td>Raws Futures M2M</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('raws_futures_m2m') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr>
+            <td>FFA M2M</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('ffa_m2m') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+          <tr class="subtotal">
+            <td>Net Raws PNL</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('net_raws_pnl') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+
+          <tr class="spacer"><td colspan="4"></td></tr>
+
+          <tr class="grand-total">
+            <td>Total PNL</td>
+            {% for slot in ['daily', 'weekly', 'monthly'] %}<td class="val">{{ fmt(snap_slots[slot].data.get('total_pnl') if snap_slots.get(slot) else none) }}</td>{% endfor %}
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </div><!-- end history pane -->
+  </div><!-- end tab-content -->
+</div>
+{% endif %}
+
+{% macro fmtpos(v) %}{% if v is none %}<span class="dash-mute">—</span>{% elif v >= 0 %}<span class="dash-pos">{{ "{:,.1f}".format(v) }}</span>{% else %}<span class="dash-neg">{{ "{:,.1f}".format(v) }}</span>{% endif %}{% endmacro %}
+<div class="dash-bottom-row">
+
+  {# ── Exposure ────────────────────────────────────────────────── #}
+  {% if exposure %}
+  <div class="dash-bot-card card p-4">
+    <div class="dash-bot-title">Exposure</div>
+    <table class="dash-clean-table">
+      <tbody>
+        <tr><td class="dash-label-cell">Alpha</td><td class="dash-num">{{ fmtpos(exposure.alpha) }}</td></tr>
+        <tr><td class="dash-label-cell">Raws</td><td class="dash-num">{{ fmtpos(exposure.raws) }}</td></tr>
+        <tr><td class="dash-label-cell">Whites</td><td class="dash-num">{{ fmtpos(exposure.whites) }}</td></tr>
+        <tr><td class="dash-label-cell">Spread</td><td class="dash-num">{{ fmtpos(exposure.spread) }}</td></tr>
+        <tr class="dash-total"><td class="dash-label-cell">Total</td><td class="dash-num">{{ fmtpos(exposure.total) }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ── Upcoming Expiries ───────────────────────────────────────── #}
+  {% if upcoming_rows %}
+  <div class="dash-bot-card card p-4">
+    <div class="dash-bot-title">Upcoming Expiries</div>
+    <div class="dash-upcoming-stack">
+      {% for r in upcoming_rows %}
+      <div class="dash-mini">
+        <div class="dash-mini-label">{{ r.label }}</div>
+        <div class="dash-mini-name">{{ r.name }}</div>
+        <div class="dash-mini-row">
+          <span class="dash-mini-date">{{ r.expiry.strftime("%d %b %Y") }}</span>
+          <span class="dash-mini-dte{% if r.warn %} dash-warn{% endif %}">{{ r.dte }}d</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Snapshots ───────────────────────────────────────────────── #}
+  <div class="dash-bot-card card p-4">
+    <div class="dash-bot-title">Snapshots</div>
+    <div class="dash-snap-list">
+      {% for slot in ['daily', 'weekly', 'monthly'] %}
+      <div class="dash-snap-row">
+        <div class="dash-snap-meta">
+          <div class="dash-snap-label">{{ slot|capitalize }}</div>
+          <div class="dash-snap-time">
+            {% if snap_slots.get(slot) %}{{ snap_slots[slot].snapshotted_at | sgt }}{% else %}<span class="dash-mute">Not saved</span>{% endif %}
+          </div>
+        </div>
+        <form action="{{ url_for('dashboard.save_snapshot', slot=slot) }}" method="POST">
+          <button type="submit" class="btn btn-sm btn-outline-secondary"
+            {% if snap_slots.get(slot) %}onclick="return confirm('Overwrite {{ slot }} snapshot saved on {{ snap_slots[slot].snapshotted_at | sgt }}?')"{% endif %}>
+            <i class="bi bi-camera me-1"></i>Save
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+      <div class="dash-snap-help">Changes compare current P&amp;L against each saved snapshot.</div>
+    </div>
+  </div>
+
+</div>
+
+</div>
+{% endblock %}

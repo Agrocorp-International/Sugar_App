@@ -1,0 +1,1178 @@
+{% extends "base.html" %}
+{% block title %}Raws - Sugar Trading{% endblock %}
+
+{% block content %}
+<style>
+  .raws-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 75vh;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+  }
+  .raws-table {
+    border-collapse: collapse;
+    white-space: nowrap;
+    width: max-content;
+    min-width: 100%;
+    font-size: 0.85rem;
+  }
+  .raws-table thead th {
+    background-color: #fce4d6;
+    color: #333;
+    font-weight: bold;
+    text-align: center;
+    border: 1px solid #c8c8c8;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 4px 6px;
+    min-width: 70px;
+    max-width: 110px;
+    vertical-align: middle;
+    white-space: normal;
+  }
+  .raws-table thead th.calc-col {
+    background-color: #b8860b;
+    color: #fff;
+  }
+
+  #whitesTable thead th {
+    background-color: #87ceeb;
+  }
+  #whitesTable thead th.calc-col {
+    background-color: #a0a0a0;
+    color: #fff;
+  }
+  .raws-table thead th.idx-col {
+    min-width: 36px;
+    padding: 6px 4px;
+  }
+  .raws-table td {
+    border: 1px solid #e8e8e8;
+    padding: 4px 8px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .raws-table tbody tr:hover { background-color: #fff8f4; }
+
+  .th-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    white-space: normal;
+    word-break: break-word;
+    text-align: center;
+    line-height: 1.2;
+    height: 100%;
+  }
+  .th-label:hover { opacity: 0.8; }
+  .sort-icon { font-size: 0.65em; opacity: 0.45; flex-shrink: 0; }
+  .sort-icon.active { opacity: 1; }
+  .raws-table .col-sep-right { border-right: 2px solid #000 !important; }
+
+  .group-header { user-select: none; cursor: pointer; }
+  .group-header:hover { filter: brightness(0.92); }
+
+  .editable-cell { cursor: text; position: relative; }
+  .editable-cell:hover { background-color: #e8f4ff !important; }
+  .editable-cell:hover::after { content: " \270F"; font-size: 0.75em; opacity: 0.6; }
+
+</style>
+
+<h4 class="mb-3">PHYS Trades</h4>
+
+<div class="tab-switcher" id="rawsSwitcher">
+  <button class="tab-sw-btn active" id="tab-raws" data-target="#pane-raws" type="button">
+    <i class="bi bi-box-seam"></i>Raws
+  </button>
+  <button class="tab-sw-btn" id="tab-whites" data-target="#pane-whites" type="button">
+    <i class="bi bi-box-seam-fill"></i>Whites
+  </button>
+</div>
+
+<!-- Unsaved changes bar -->
+<div id="saveBar" class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="display:none!important;">
+  <i class="bi bi-pencil-square"></i>
+  <span><strong id="pendingCount">0</strong> unsaved change(s)</span>
+  <button class="btn btn-primary btn-sm ms-auto" id="saveAllBtn">
+    <i class="bi bi-floppy me-1"></i>Save All Changes
+  </button>
+  <button class="btn btn-outline-secondary btn-sm" id="discardAllBtn">Discard</button>
+</div>
+
+<div class="tab-content">
+
+<div class="tab-pane show active" id="pane-raws">
+<div class="mb-2 d-flex align-items-center gap-3">
+  <small class="text-muted">{{ rows|length }} records</small>
+  <button class="btn btn-outline-dark" onclick="toggleAllGroups('rawsTable', 'raws_collapsed_groups', true)"><i class="bi bi-dash-square me-2"></i>Collapse All</button>
+  <button class="btn btn-outline-dark" onclick="toggleAllGroups('rawsTable', 'raws_collapsed_groups', false)"><i class="bi bi-plus-square me-2"></i>Expand All</button>
+  <button class="btn btn-outline-success" onclick="addDeal('Raws')"><i class="bi bi-plus-lg me-1"></i>Add Deal</button>
+  <button class="btn btn-outline-danger btn-sm" id="deleteSelectedRawsBtn" style="display:none;" onclick="deleteSelected('Raws')"><i class="bi bi-trash me-1"></i>Delete Selected</button>
+  <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
+    <span style="display:inline-block;width:14px;height:14px;background:#fce4d6;border:1px solid #c8c8c8;border-radius:2px;"></span><span class="text-muted">Editable</span>
+    <span style="display:inline-block;width:14px;height:14px;background:#b8860b;border:1px solid #c8c8c8;border-radius:2px;margin-left:6px;"></span><span class="text-muted">Calculated</span>
+    <button class="btn btn-outline-secondary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#rawsColumnGuideModal"><i class="bi bi-question-circle me-1"></i>Column Guide</button>
+  </span>
+  <div class="ms-auto d-flex gap-2">
+    <button class="btn btn-outline-secondary btn-sm" onclick="seedFromDisk()"><i class="bi bi-arrow-repeat me-1"></i>Seed from Disk</button>
+    <button class="btn btn-outline-warning btn-sm" onclick="document.getElementById('excelUpload').click()"><i class="bi bi-upload me-1"></i>Override from Excel</button>
+    <input type="file" id="excelUpload" accept=".xlsm,.xlsx" style="display:none" onchange="uploadExcel(this)">
+  </div>
+</div>
+
+{% if error %}
+  <div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    Error loading data: {{ error }}
+  </div>
+{% elif rows %}
+{% set sep_cols = (
+  'AGS', 'Shipment Period', 'Qty Short', 'Spread Exposure',
+  'Short Physical Qty', 'Short Physical Exposure', 'Sales Hedges',
+  'Short Physical Pol', 'Sales Pol Hedge', 'Options Delta', 'Spread Value',
+  'Purchase Price', 'Sales Price', 'Purchase Cost (CNF)', 'Total PNL'
+) %}
+{% set col_group_map = {
+  'Supplier': 'Purchase Info', 'AGP': 'Purchase Info',
+  'Buyer': 'Sale Info', 'AGS': 'Sale Info',
+  'Shipment Period': 'Quantity & Hedging',
+  'Qty Long': 'Quantity & Hedging', 'Qty Short': 'Quantity & Hedging',
+  'Overall Exposure': 'Quantity & Hedging', 'Purchase Exposure': 'Quantity & Hedging',
+  'Sales Exposure': 'Quantity & Hedging', 'Pol Exposure': 'Quantity & Hedging',
+  'Spread Exposure': 'Quantity & Hedging', 'Long Physical Qty': 'Quantity & Hedging',
+  'Short Physical Qty': 'Quantity & Hedging', 'Long Physical Exposure': 'Quantity & Hedging',
+  'Short Physical Exposure': 'Quantity & Hedging', 'Purchase Hedges': 'Quantity & Hedging',
+  'Sales Hedges': 'Quantity & Hedging', 'Long Physical Pol': 'Quantity & Hedging',
+  'Short Physical Pol': 'Quantity & Hedging', 'Purchase Pol Hedge': 'Quantity & Hedging',
+  'Sales Pol Hedge': 'Quantity & Hedging', 'Options Delta': 'Quantity & Hedging',
+  'Spreads': 'Quantity & Hedging', 'Spread Value': 'Quantity & Hedging',
+  'Purchase Contract': 'Purchase', 'Purchase Settlement': 'Purchase',
+  'Purchase Incoterm': 'Purchase', 'Purchase Terms': 'Purchase',
+  'Purchase Units': 'Purchase', 'Purchase Input': 'Purchase',
+  'Purchase Futures Pricing': 'Purchase', 'Purchase Basis': 'Purchase', 'Purchase Price': 'Purchase',
+  'Sales Contract': 'Sales', 'Sales Settlement': 'Sales',
+  'Sales Incoterm': 'Sales', 'Sales Terms': 'Sales',
+  'Sales Units': 'Sales', 'Sales Input': 'Sales',
+  'Sales Futures Pricing': 'Sales', 'Sales Basis': 'Sales', 'Sales Price': 'Sales',
+  'Freight': 'Costs ($/MT)', 'Insurance': 'Costs ($/MT)', 'Financing': 'Costs ($/MT)',
+  'Misc': 'Costs ($/MT)', 'Elevation': 'Costs ($/MT)', 'Purchase Cost (CNF)': 'Costs ($/MT)',
+  'Physical PNL': 'PNL', 'Futures PNL': 'PNL', 'Total PNL': 'PNL',
+} %}
+{% set group_colors = {
+  'Purchase Info': '#cfe2ff',
+  'Sale Info':     '#d1e7dd',
+  'Quantity & Hedging': '#e2d9f3',
+  'Purchase':      '#fce4d6',
+  'Sales':         '#fff3cd',
+  'Costs ($/MT)':  '#f8d7da',
+  'PNL':           '#d0f0e8',
+} %}
+{% set group_ids = {
+  'Purchase Info': 'purchase_info',
+  'Sale Info': 'sale_info',
+  'Quantity & Hedging': 'qty_hedging',
+  'Purchase': 'purchase',
+  'Sales': 'sales',
+  'Costs ($/MT)': 'costs',
+  'PNL': 'pnl',
+} %}
+{% set group_spans = [] %}
+{% set ns = namespace(prev='__start__', count=0) %}
+{% for col in columns %}
+  {% set g = col_group_map.get(col, '') %}
+  {% if ns.prev == '__start__' %}
+    {% set ns.prev = g %}{% set ns.count = 1 %}
+  {% elif g == ns.prev %}
+    {% set ns.count = ns.count + 1 %}
+  {% else %}
+    {% set _ = group_spans.append((ns.prev, ns.count)) %}
+    {% set ns.prev = g %}{% set ns.count = 1 %}
+  {% endif %}
+  {% if loop.last %}{% set _ = group_spans.append((ns.prev, ns.count)) %}{% endif %}
+{% endfor %}
+  <div class="raws-wrap">
+    <table class="raws-table" id="rawsTable">
+      <thead>
+        <tr>
+          <th class="idx-col" rowspan="2" style="vertical-align:middle;" onclick="sortTable('rawsTable', 0, this)"><div class="th-label"><span>#</span><i class="bi bi-arrow-down-up sort-icon"></i></div></th>
+          {% for group, span in group_spans %}
+            {% if group %}
+              {% set gid = group_ids.get(group, '') %}
+              <th colspan="{{ span }}" data-group-id="{{ gid }}" data-group-toggle="{{ gid }}" data-original-colspan="{{ span }}"
+                  class="group-header" style="background:{{ group_colors.get(group, '#f0f0f0') }};text-align:center;border:1px solid #c8c8c8;font-weight:bold;cursor:pointer;"
+                  onclick="toggleGroup('rawsTable', '{{ gid }}', 'raws_collapsed_groups')">
+                <i class="bi bi-dash-square" style="font-size:1.1em;margin-right:4px;vertical-align:middle;"></i>{{ group }}
+              </th>
+            {% else %}
+              <th colspan="{{ span }}" style="background:#f5f5f5;border:1px solid #c8c8c8;"></th>
+            {% endif %}
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for col in columns %}
+          <th{% if col in calculated_cols %} class="calc-col"{% endif %} data-col-group="{{ group_ids.get(col_group_map.get(col, ''), '') }}">
+            <div class="th-label" onclick="sortTable('rawsTable', {{ loop.index }}, this)">
+              <span>{{ col }}</span>
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr data-id="{{ row['_deal_id'] }}">
+          <td class="text-muted"><input type="checkbox" class="row-check raws-check" value="{{ row['_deal_id'] }}"></td>
+          {% for col in columns %}
+          {% set is_editable = col not in calculated_cols %}
+          <td{% if col in sep_cols %} class="col-sep-right{% if is_editable %} editable-cell{% endif %}"{% elif is_editable %} class="editable-cell"{% endif %} data-col-group="{{ group_ids.get(col_group_map.get(col, ''), '') }}"{% if is_editable %} data-field="{{ col }}" data-value="{{ row[col] if row[col] is not none else '' }}"{% endif %}>
+            {%- set val = row[col] -%}
+            {%- if col in pnl_cols and val is number -%}
+              <span style="color:{%- if val > 0 %}#198754{%- elif val < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ val|comma_int }}</span>
+            {%- elif val is none and col in numeric_cols -%}
+              0
+            {%- elif val is none -%}
+            {%- elif val is sameas true -%}
+              True
+            {%- elif val is sameas false -%}
+              False
+            {%- elif val is number and val == val|int -%}
+              <span{% if val < 0 %} style="color:#dc3545;"{% endif %}>{{ val|int }}</span>
+            {%- elif val is number -%}
+              {{ "%.2f"|format(val) }}
+            {%- else -%}
+              {{ val }}
+            {%- endif -%}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="background:#f0f0f0; font-weight:bold; border-top:2px solid #aaa;">
+          <td class="text-muted">—</td>
+          {% for col in columns %}
+          <td style="text-align:center;" {% if col in sep_cols %}class="col-sep-right"{% endif %} data-col-group="{{ group_ids.get(col_group_map.get(col, ''), '') }}">
+            {%- if col in pnl_cols -%}
+              {%- set t = totals[col] -%}
+              <span style="color:{%- if t > 0 %}#198754{%- elif t < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ t|comma_int }}</span>
+            {%- elif col in total_cols -%}
+              {%- set t = totals[col] -%}
+              {{ t|comma_int }}
+            {%- endif -%}
+          </td>
+          {% endfor %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+{% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-inbox fs-1"></i>
+    <p class="mt-2">No data found. Use "Seed from Disk" or "Override from Excel" to load deals.</p>
+  </div>
+{% endif %}
+
+</div>{# end pane-raws #}
+
+<div class="tab-pane" id="pane-whites">
+  <div class="mb-2 d-flex align-items-center gap-3">
+    <small class="text-muted">{{ whites_rows|length }} records</small>
+    <button class="btn btn-outline-dark" onclick="toggleAllGroups('whitesTable', 'whites_collapsed_groups', true)"><i class="bi bi-dash-square me-2"></i>Collapse All</button>
+    <button class="btn btn-outline-dark" onclick="toggleAllGroups('whitesTable', 'whites_collapsed_groups', false)"><i class="bi bi-plus-square me-2"></i>Expand All</button>
+    <button class="btn btn-outline-success" onclick="addDeal('Whites')"><i class="bi bi-plus-lg me-1"></i>Add Deal</button>
+    <button class="btn btn-outline-danger btn-sm" id="deleteSelectedWhitesBtn" style="display:none;" onclick="deleteSelected('Whites')"><i class="bi bi-trash me-1"></i>Delete Selected</button>
+    <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
+      <span style="display:inline-block;width:14px;height:14px;background:#87ceeb;border:1px solid #c8c8c8;border-radius:2px;"></span><span class="text-muted">Editable</span>
+      <span style="display:inline-block;width:14px;height:14px;background:#a0a0a0;border:1px solid #c8c8c8;border-radius:2px;margin-left:6px;"></span><span class="text-muted">Calculated</span>
+      <button class="btn btn-outline-secondary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#whitesColumnGuideModal"><i class="bi bi-question-circle me-1"></i>Column Guide</button>
+    </span>
+  </div>
+  {% if whites_rows %}
+  {% set whites_sep_cols = (
+    'AGP', 'Year', 'Shipment Month', 'AGS', 'Qty Short', 'Overall Exposure',
+    'Short Physical Qty', 'Short Physical Exposure', 'Sales Hedges', 'Spread Value',
+    'Purchase Price', 'Sales Price', 'CNF', 'Total PNL',
+    'Destination', 'Sales Status', 'Sales Hedged in SB', 'Sales Hedged'
+  ) %}
+  {% set whites_col_group_map = {
+    'Supplier': 'Purchase Info', 'AGP': 'Purchase Info', 'Year': 'Purchase Info',
+    'Shipment Month': 'Sales Info', 'Buyer': 'Sales Info', 'AGS': 'Sales Info',
+    'Qty Long': 'Quantity & Hedging', 'Qty Short': 'Quantity & Hedging',
+    'Purchase Exposure': 'Quantity & Hedging', 'Sales Exposure': 'Quantity & Hedging',
+    'Overall Exposure': 'Quantity & Hedging', 'Long Physical Qty': 'Quantity & Hedging',
+    'Short Physical Qty': 'Quantity & Hedging', 'Long Physical Exposure': 'Quantity & Hedging',
+    'Short Physical Exposure': 'Quantity & Hedging', 'Purchase Hedges': 'Quantity & Hedging',
+    'Sales Hedges': 'Quantity & Hedging', 'Spreads': 'Quantity & Hedging',
+    'Spread Value': 'Quantity & Hedging',
+    'Purchase Contract': 'Purchase', 'Purchase Settlement': 'Purchase',
+    'Purchase Incoterm': 'Purchase', 'Purchase Terms': 'Purchase',
+    'Purchase Input': 'Purchase', 'Purchase Futures Pricing': 'Purchase',
+    'Purchase Basis': 'Purchase', 'Purchase Price': 'Purchase',
+    'Sales Contract': 'Sales', 'Sales Settlement': 'Sales',
+    'Sales Incoterm': 'Sales', 'Sales Terms': 'Sales',
+    'Sales Input': 'Sales', 'Sales Futures Pricing': 'Sales',
+    'Sales Basis': 'Sales', 'Sales Price': 'Sales',
+    'Freight': 'Costs', 'Insurance': 'Costs', 'Financing': 'Costs',
+    'Misc': 'Costs', 'CNF': 'Costs',
+    'Physical PNL': 'PNL', 'Futures PNL': 'PNL', 'Total PNL': 'PNL',
+  } %}
+  {% set whites_group_colors = {
+    'Purchase Info': '#cfe2ff',
+    'Sales Info':    '#d1e7dd',
+    'Quantity & Hedging': '#e2d9f3',
+    'Purchase':      '#fce4d6',
+    'Sales':         '#fff3cd',
+    'Costs':         '#f8d7da',
+    'PNL':           '#d0f0e8',
+  } %}
+  {% set whites_group_ids = {
+    'Purchase Info': 'purchase_info',
+    'Sales Info': 'sales_info',
+    'Quantity & Hedging': 'qty_hedging',
+    'Purchase': 'purchase',
+    'Sales': 'sales',
+    'Costs': 'costs',
+    'PNL': 'pnl',
+  } %}
+  {% set whites_group_spans = [] %}
+  {% set wns = namespace(prev='__start__', count=0) %}
+  {% for col in whites_columns %}
+    {% set g = whites_col_group_map.get(col, '') %}
+    {% if wns.prev == '__start__' %}
+      {% set wns.prev = g %}{% set wns.count = 1 %}
+    {% elif g == wns.prev %}
+      {% set wns.count = wns.count + 1 %}
+    {% else %}
+      {% set _ = whites_group_spans.append((wns.prev, wns.count)) %}
+      {% set wns.prev = g %}{% set wns.count = 1 %}
+    {% endif %}
+    {% if loop.last %}{% set _ = whites_group_spans.append((wns.prev, wns.count)) %}{% endif %}
+  {% endfor %}
+  <div class="raws-wrap">
+    <table class="raws-table" id="whitesTable">
+      <thead>
+        <tr>
+          <th class="idx-col" rowspan="2" style="vertical-align:middle;" onclick="sortTable('whitesTable', 0, this)"><div class="th-label"><span>#</span><i class="bi bi-arrow-down-up sort-icon"></i></div></th>
+          {% for group, span in whites_group_spans %}
+            {% if group %}
+              {% set wgid = whites_group_ids.get(group, '') %}
+              <th colspan="{{ span }}" data-group-id="{{ wgid }}" data-group-toggle="{{ wgid }}" data-original-colspan="{{ span }}"
+                  class="group-header" style="background:{{ whites_group_colors.get(group, '#f0f0f0') }};text-align:center;border:1px solid #c8c8c8;font-weight:bold;cursor:pointer;"
+                  onclick="toggleGroup('whitesTable', '{{ wgid }}', 'whites_collapsed_groups')">
+                <i class="bi bi-dash-square" style="font-size:1.1em;margin-right:4px;vertical-align:middle;"></i>{{ group }}
+              </th>
+            {% else %}
+              <th colspan="{{ span }}" style="background:#f5f5f5;border:1px solid #c8c8c8;"></th>
+            {% endif %}
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for col in whites_columns %}
+          <th{% if col in whites_calculated_cols %} class="calc-col"{% endif %} data-col-group="{{ whites_group_ids.get(whites_col_group_map.get(col, ''), '') }}">
+            <div class="th-label" onclick="sortTable('whitesTable', {{ loop.index }}, this)">
+              <span>{{ col }}</span>
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in whites_rows %}
+        <tr data-id="{{ row['_deal_id'] }}">
+          <td class="text-muted"><input type="checkbox" class="row-check whites-check" value="{{ row['_deal_id'] }}"></td>
+          {% for col in whites_columns %}
+          {% set is_editable = col not in whites_calculated_cols %}
+          <td{% if col in whites_sep_cols %} class="col-sep-right{% if is_editable %} editable-cell{% endif %}"{% elif is_editable %} class="editable-cell"{% endif %} data-col-group="{{ whites_group_ids.get(whites_col_group_map.get(col, ''), '') }}"{% if is_editable %} data-field="{{ col }}" data-value="{{ row[col] if row[col] is not none else '' }}"{% endif %}>
+            {%- set val = row[col] -%}
+            {%- if col in whites_pnl_cols and val is number -%}
+              <span style="color:{%- if val > 0 %}#198754{%- elif val < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ val|comma_int }}</span>
+            {%- elif val is none and col in whites_numeric_cols -%}
+              0
+            {%- elif val is none -%}
+            {%- elif val is sameas true -%}True
+            {%- elif val is sameas false -%}False
+            {%- elif val is number and val == val|int -%}
+              <span{% if val < 0 %} style="color:#dc3545;"{% endif %}>{{ val|int }}</span>
+            {%- elif val is number -%}{{ "%.2f"|format(val) }}
+            {%- else -%}{{ val }}
+            {%- endif -%}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="background:#f0f0f0; font-weight:bold; border-top:2px solid #aaa;">
+          <td class="text-muted">—</td>
+          {% for col in whites_columns %}
+          <td style="text-align:center;"{% if col in whites_sep_cols %} class="col-sep-right"{% endif %} data-col-group="{{ whites_group_ids.get(whites_col_group_map.get(col, ''), '') }}">
+            {%- if col in whites_pnl_cols -%}
+              {%- set t = whites_totals[col] -%}
+              <span style="color:{%- if t > 0 %}#198754{%- elif t < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ t|comma_int }}</span>
+            {%- elif col in whites_total_cols -%}
+              {%- set t = whites_totals[col] -%}
+              {{ t|comma_int }}
+            {%- endif -%}
+          </td>
+          {% endfor %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-inbox fs-1"></i>
+    <p class="mt-2">No data found.</p>
+  </div>
+  {% endif %}
+</div>
+
+</div>{# end tab-content #}
+
+<script>
+// Manual tab switching with URL hash persistence
+(function() {
+  const switcher = document.getElementById('rawsSwitcher');
+  const buttons  = switcher.querySelectorAll('.tab-sw-btn');
+  const panes    = document.querySelectorAll('.tab-content > .tab-pane');
+
+  function activateTab(btn) {
+    const target = btn.getAttribute('data-target');
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    panes.forEach(p => p.classList.remove('show', 'active'));
+    const pane = document.querySelector(target);
+    if (pane) requestAnimationFrame(() => pane.classList.add('active', 'show'));
+    location.hash = target;
+  }
+
+  buttons.forEach(btn => btn.addEventListener('click', () => activateTab(btn)));
+
+  // Restore from hash
+  const _hash = location.hash;
+  if (_hash === '#pane-whites') {
+    activateTab(document.getElementById('tab-whites'));
+  }
+})();
+
+// Fix sticky top offset for two-row headers
+function fixHeaderSticky(tableId) {
+  const tbl = document.getElementById(tableId);
+  if (!tbl) return;
+  const rows = tbl.querySelectorAll('thead tr');
+  if (rows.length < 2) return;
+  const h = rows[0].offsetHeight;
+  rows[1].querySelectorAll('th').forEach(th => { th.style.top = h + 'px'; });
+}
+fixHeaderSticky('rawsTable');
+fixHeaderSticky('whitesTable');
+
+const sortStates = {};
+
+function sortTable(tableId, colIdx, labelEl) {
+  const table = document.getElementById(tableId);
+  const tbody = table.tBodies[0];
+  const rows = Array.from(tbody.rows).filter(r => r.style.display !== 'none');
+  const hiddenRows = Array.from(tbody.rows).filter(r => r.style.display === 'none');
+  if (!sortStates[tableId]) sortStates[tableId] = {};
+  const dir = sortStates[tableId][colIdx] === 'asc' ? 'desc' : 'asc';
+  sortStates[tableId] = {};
+  sortStates[tableId][colIdx] = dir;
+
+  table.querySelectorAll('.sort-icon').forEach(el => {
+    el.className = 'bi bi-arrow-down-up sort-icon';
+  });
+  const icon = labelEl.querySelector('.sort-icon');
+  icon.className = `bi ${dir === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'} sort-icon active`;
+
+  rows.sort((a, b) => {
+    const aText = a.cells[colIdx].textContent.trim();
+    const bText = b.cells[colIdx].textContent.trim();
+    const aNum = parseFloat(aText.replace(/,/g, ''));
+    const bNum = parseFloat(bText.replace(/,/g, ''));
+    if (!isNaN(aNum) && !isNaN(bNum)) return dir === 'asc' ? aNum - bNum : bNum - aNum;
+    return dir === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  hiddenRows.forEach(r => tbody.appendChild(r));
+}
+
+// ── Column group collapse / expand ──────────────────────────────────
+function getCollapsedGroups(storageKey) {
+  try { return JSON.parse(localStorage.getItem(storageKey)) || []; }
+  catch { return []; }
+}
+
+function saveCollapsedGroups(storageKey, groups) {
+  localStorage.setItem(storageKey, JSON.stringify(groups));
+}
+
+function applyGroupState(tableId, groupId, collapsed) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  // Collect all cells per row so we can keep the first one visible as a placeholder
+  const rowMap = new Map();
+  table.querySelectorAll('[data-col-group="' + groupId + '"]').forEach(el => {
+    const row = el.parentElement;
+    if (!rowMap.has(row)) rowMap.set(row, []);
+    rowMap.get(row).push(el);
+  });
+
+  rowMap.forEach((cells, row) => {
+    cells.forEach((el, idx) => {
+      if (collapsed) {
+        if (idx === 0) {
+          // First cell stays visible as narrow placeholder
+          el.style.display = '';
+          if (!el.hasAttribute('data-original-content')) {
+            el.setAttribute('data-original-content', el.innerHTML);
+            el.setAttribute('data-original-min-width', el.style.minWidth || '');
+          }
+          el.innerHTML = '<span style="color:#aaa;">&#8230;</span>';
+          el.style.minWidth = '28px';
+          el.style.maxWidth = '28px';
+          el.style.padding = '2px';
+          el.style.overflow = 'hidden';
+        } else {
+          el.style.display = 'none';
+        }
+      } else {
+        el.style.display = '';
+        if (el.hasAttribute('data-original-content')) {
+          el.innerHTML = el.getAttribute('data-original-content');
+          el.style.minWidth = el.getAttribute('data-original-min-width');
+          el.style.maxWidth = '';
+          el.style.padding = '';
+          el.style.overflow = '';
+          el.removeAttribute('data-original-content');
+          el.removeAttribute('data-original-min-width');
+        }
+      }
+    });
+  });
+
+  // Update group header (has both data-group-id and data-group-toggle)
+  const header = table.querySelector('[data-group-id="' + groupId + '"]');
+  if (header) {
+    if (collapsed) {
+      if (!header.hasAttribute('data-original-content')) {
+        header.setAttribute('data-original-content', header.innerHTML);
+      }
+      header.colSpan = 1;
+      header.innerHTML = '<i class="bi bi-plus-square" style="font-size:1.1em;"></i>';
+      header.style.minWidth = '28px';
+      header.style.maxWidth = '28px';
+      header.style.padding = '4px';
+      header.style.overflow = 'hidden';
+      header.title = 'Click to expand';
+    } else {
+      header.colSpan = parseInt(header.getAttribute('data-original-colspan'));
+      if (header.hasAttribute('data-original-content')) {
+        header.innerHTML = header.getAttribute('data-original-content');
+        header.removeAttribute('data-original-content');
+      }
+      header.style.minWidth = '';
+      header.style.maxWidth = '';
+      header.style.padding = '';
+      header.style.overflow = '';
+      header.title = '';
+    }
+  }
+}
+
+function toggleGroup(tableId, groupId, storageKey) {
+  let collapsed = getCollapsedGroups(storageKey);
+  const isCollapsed = collapsed.includes(groupId);
+  if (isCollapsed) {
+    collapsed = collapsed.filter(g => g !== groupId);
+  } else {
+    collapsed.push(groupId);
+  }
+  saveCollapsedGroups(storageKey, collapsed);
+  applyGroupState(tableId, groupId, !isCollapsed);
+}
+
+function toggleAllGroups(tableId, storageKey, collapse) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const allIds = [];
+  table.querySelectorAll('[data-group-id]').forEach(el => {
+    const gid = el.getAttribute('data-group-id');
+    if (gid && !allIds.includes(gid)) allIds.push(gid);
+  });
+  allIds.forEach(gid => applyGroupState(tableId, gid, collapse));
+  saveCollapsedGroups(storageKey, collapse ? allIds : []);
+}
+
+function restoreGroupStates(tableId, storageKey) {
+  const collapsed = getCollapsedGroups(storageKey);
+  collapsed.forEach(groupId => applyGroupState(tableId, groupId, true));
+}
+
+// Restore on load
+restoreGroupStates('rawsTable', 'raws_collapsed_groups');
+restoreGroupStates('whitesTable', 'whites_collapsed_groups');
+
+// Restore scroll + active tab after a save-triggered reload
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+(function restoreAfterSave() {
+  const tabId = sessionStorage.getItem("raws_active_tab");
+  if (tabId) {
+    const tab = document.getElementById(tabId);
+    if (tab && window.bootstrap) new bootstrap.Tab(tab).show();
+    sessionStorage.removeItem("raws_active_tab");
+  }
+  const winRaw = sessionStorage.getItem("raws_win_y");
+  const wrapsRaw = sessionStorage.getItem("raws_wrap_scroll");
+  if (winRaw === null && wrapsRaw === null) return;
+  sessionStorage.removeItem("raws_win_y");
+  sessionStorage.removeItem("raws_wrap_scroll");
+  const winY = parseInt(winRaw || "0", 10) || 0;
+  let wraps = {};
+  try { wraps = JSON.parse(wrapsRaw || "{}"); } catch (e) {}
+  const tryScroll = () => {
+    window.scrollTo(0, winY);
+    for (const [paneId, pos] of Object.entries(wraps)) {
+      const wrap = document.querySelector(`#${CSS.escape(paneId)} .raws-wrap`);
+      if (wrap) { wrap.scrollTop = pos.top; wrap.scrollLeft = pos.left; }
+    }
+  };
+  tryScroll();
+  requestAnimationFrame(tryScroll);
+  window.addEventListener("load", () => {
+    tryScroll();
+    setTimeout(tryScroll, 50);
+    setTimeout(tryScroll, 200);
+  });
+})();
+
+// ── Inline editing ──────────────────────────────────────────────────
+const NUMERIC_FIELDS = new Set({{ numeric_cols|list|tojson }});
+const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const SELECT_FIELDS = {
+  "Shipment Period": _MONTHS,
+  "Shipment Month":  _MONTHS,
+  "Purchase Terms":  ["Basis","Flat"],
+  "Sales Terms":     ["Basis","Flat"],
+  "Purchase Units":  ["$/MT","c/lb"],
+  "Sales Units":     ["$/MT","c/lb"],
+};
+const UPPERCASE_FIELDS = new Set(["Purchase Contract","Sales Contract"]);
+const CONTRACT_FIELDS = new Set(["Purchase Contract","Sales Contract"]);
+const CONTRACT_RE = /^(SB|SW) ([FGHJKMNQUVXZ])(\d{2})$/;
+function normalizeContract(v) {
+  const compact = v.replace(/\s+/g, "").toUpperCase();
+  if (compact.length === 5 && (compact.startsWith("SB") || compact.startsWith("SW"))) {
+    return compact.slice(0,2) + " " + compact.slice(2);
+  }
+  return v.toUpperCase();
+}
+const DIRTY_COLOR = "#fff8d6";
+const UPDATE_URL = "/raws/api/update";
+let editingCell = null;
+const pendingChanges = {};
+
+document.querySelectorAll(".editable-cell").forEach(td => {
+  td.addEventListener("click", function (e) {
+    if (e.target.tagName === "INPUT" && e.target.type === "checkbox") return;
+    if (editingCell && editingCell.td === td) return;
+    if (editingCell) commitEdit(editingCell);
+
+    const field = td.dataset.field;
+    if (!field) return;
+    const currentValue = td.dataset.value;
+    const rowId = td.closest("tr").dataset.id;
+    editingCell = { td, rowId, field, originalValue: currentValue };
+
+    const selectOptions = SELECT_FIELDS[field];
+    let input;
+    if (selectOptions) {
+      input = document.createElement("select");
+      input.className = "form-select form-select-sm";
+      input.style.minWidth = "90px";
+      input.style.padding = "2px 4px";
+      input.style.fontSize = "0.85rem";
+      const blank = document.createElement("option");
+      blank.value = ""; blank.textContent = "—";
+      input.appendChild(blank);
+      selectOptions.forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt; o.textContent = opt;
+        if (opt === currentValue) o.selected = true;
+        input.appendChild(o);
+      });
+    } else {
+      const isNumeric = NUMERIC_FIELDS.has(field);
+      input = document.createElement("input");
+      input.type = isNumeric ? "number" : "text";
+      input.step = "any";
+      input.value = currentValue;
+      input.className = "form-control form-control-sm" + (isNumeric ? " text-end" : "");
+      input.style.minWidth = isNumeric ? "80px" : "90px";
+      input.style.padding = "2px 4px";
+      input.style.fontSize = "0.85rem";
+    }
+
+    td.textContent = "";
+    td.appendChild(input);
+    input.focus();
+    if (input.tagName === "INPUT") input.select();
+
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter")  { e.preventDefault(); commitEdit(editingCell); }
+      if (e.key === "Escape") { e.preventDefault(); cancelEdit(editingCell); }
+    });
+    if (input.tagName === "SELECT") {
+      input.addEventListener("change", function () {
+        if (editingCell) commitEdit(editingCell);
+      });
+    }
+    input.addEventListener("blur", function () {
+      setTimeout(() => { if (editingCell) commitEdit(editingCell); }, 150);
+    });
+  });
+});
+
+function cancelEdit(state) {
+  editingCell = null;
+  state.td.textContent = state.td.dataset.value;
+}
+
+function commitEdit(state) {
+  editingCell = null;
+  const input = state.td.querySelector("input, select");
+  if (!input) return;
+  let newValue = input.value.trim();
+  if (UPPERCASE_FIELDS.has(state.field)) newValue = newValue.toUpperCase();
+  if (CONTRACT_FIELDS.has(state.field) && newValue) {
+    newValue = normalizeContract(newValue);
+    if (!CONTRACT_RE.test(newValue)) {
+      alert(`Invalid contract "${input.value}". Expected format like "SB K26" or "SW K26" (month letter ∈ F G H J K M N Q U V X Z).`);
+      cancelEdit(state);
+      return;
+    }
+  }
+  if (newValue === state.originalValue) {
+    state.td.textContent = state.originalValue;
+    return;
+  }
+  stageChange(state.rowId, state.field, newValue);
+}
+
+function stageChange(rowId, field, value) {
+  const key = `${rowId}|${field}`;
+  pendingChanges[key] = { record_id: parseInt(rowId), field, value };
+  const tr = document.querySelector(`tr[data-id="${rowId}"]`);
+  if (tr) {
+    const td = tr.querySelector(`.editable-cell[data-field="${field}"]`);
+    if (td) {
+      td.textContent = value;
+      td.dataset.value = value;
+      td.style.backgroundColor = DIRTY_COLOR;
+    }
+  }
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  const count = Object.keys(pendingChanges).length;
+  const bar = document.getElementById("saveBar");
+  if (count > 0) {
+    bar.style.removeProperty("display");
+    bar.style.display = "flex";
+    document.getElementById("pendingCount").textContent = count;
+  } else {
+    bar.style.setProperty("display", "none", "important");
+  }
+}
+
+document.getElementById("saveAllBtn")?.addEventListener("click", function () {
+  const changes = Object.values(pendingChanges);
+  if (!changes.length) return;
+  fetch(UPDATE_URL, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({changes})
+  })
+  .then(r => r.json())
+  .then(result => {
+    if (!result.ok) {
+      alert("Save failed: " + (result.error || "Unknown error"));
+      return;
+    }
+    // Preserve scroll + active tab across reload so derived values recompute without jumping.
+    sessionStorage.setItem("raws_win_y", String(window.scrollY));
+    const wraps = {};
+    document.querySelectorAll(".tab-pane").forEach(pane => {
+      const wrap = pane.querySelector(".raws-wrap");
+      if (wrap) wraps[pane.id] = { top: wrap.scrollTop, left: wrap.scrollLeft };
+    });
+    sessionStorage.setItem("raws_wrap_scroll", JSON.stringify(wraps));
+    const activeTab = document.querySelector(".nav-tabs .nav-link.active");
+    if (activeTab?.id) sessionStorage.setItem("raws_active_tab", activeTab.id);
+    location.reload();
+  })
+  .catch(() => { alert("Network error. Reloading."); location.reload(); });
+});
+
+document.getElementById("discardAllBtn")?.addEventListener("click", () => location.reload());
+
+// ── Checkbox selection for delete ──────────────────────────────────
+document.querySelectorAll(".raws-check").forEach(cb => {
+  cb.addEventListener("change", () => {
+    const checked = document.querySelectorAll(".raws-check:checked").length;
+    document.getElementById("deleteSelectedRawsBtn").style.display = checked ? "" : "none";
+  });
+});
+document.querySelectorAll(".whites-check").forEach(cb => {
+  cb.addEventListener("change", () => {
+    const checked = document.querySelectorAll(".whites-check:checked").length;
+    document.getElementById("deleteSelectedWhitesBtn").style.display = checked ? "" : "none";
+  });
+});
+
+// ── Add / Delete / Upload / Seed ────────────────────────────────────
+function addDeal(book) {
+  fetch("/raws/api/add", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({book})
+  })
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) {
+      location.href = `/raws?edit_id=${result.id}` + (book === "Whites" ? "#pane-whites" : "#pane-raws");
+    } else {
+      alert("Add failed: " + (result.error || "Unknown error"));
+    }
+  })
+  .catch(() => alert("Network error."));
+}
+
+function deleteSelected(book) {
+  const cls = book === "Raws" ? ".raws-check:checked" : ".whites-check:checked";
+  const ids = Array.from(document.querySelectorAll(cls)).map(cb => parseInt(cb.value));
+  if (!ids.length) return;
+  if (Object.keys(pendingChanges).length > 0) {
+    if (!confirm("You have unsaved edits that will be lost. Continue?")) return;
+  }
+  if (!confirm(`Delete ${ids.length} deal(s)? This cannot be undone.`)) return;
+  fetch("/raws/api/delete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ids})
+  })
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) location.reload();
+    else alert("Delete failed: " + (result.error || "Unknown error"));
+  })
+  .catch(() => alert("Network error."));
+}
+
+function seedFromDisk() {
+  if (!confirm("This will replace ALL Raws and Whites deals from sugarm2m.xlsm on disk. Continue?")) return;
+  fetch("/raws/api/seed", {method: "POST"})
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) {
+      alert(`Seeded ${result.raws} Raws + ${result.whites} Whites deals.`);
+      location.reload();
+    } else {
+      alert("Seed failed: " + (result.error || "Unknown error"));
+    }
+  })
+  .catch(() => alert("Network error."));
+}
+
+function uploadExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm("This will replace ALL current Raws and Whites deals from the uploaded workbook. Continue?")) {
+    input.value = "";
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  fetch("/raws/api/upload", {method: "POST", body: form})
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) {
+      alert(`Uploaded ${result.raws} Raws + ${result.whites} Whites deals.`);
+      location.reload();
+    } else {
+      alert("Upload failed: " + (result.error || "Unknown error"));
+    }
+    input.value = "";
+  })
+  .catch(() => { alert("Network error."); input.value = ""; });
+}
+
+</script>
+
+<!-- Raws Column Guide Modal -->
+<div class="modal fade" id="rawsColumnGuideModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-question-circle me-2"></i>Raws &mdash; Calculated Columns Guide</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <h6 class="text-muted mb-2">Physical Quantities</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Long Physical Qty (Lots)</strong></td><td>Physical long quantity converted into futures-equivalent lots:<br><code>= ROUND(Qty Long &divide; 50.8, 0)</code></td></tr>
+            <tr><td><strong>Short Physical Qty (Lots)</strong></td><td>Physical short quantity converted into futures-equivalent lots:<br><code>= ROUND(&minus;Qty Short &divide; 50.8, 0)</code></td></tr>
+            <tr><td><strong>Pol</strong></td><td>Polarisation factor applied in SB-linked price conversion via <code>(1 + Pol)</code>:<br>&bull; Uses actual Pol if provided<br>&bull; Defaults to 0.0375 for Washout<br>&bull; Defaults to 0.042 otherwise<br>Affects both pricing and exposure calculations.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Hedge Positions</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Hedges</strong></td><td>Net futures position linked to AGP (non-Pol trades only), sourced from Trades.</td></tr>
+            <tr><td><strong>Sales Hedges</strong></td><td>Net futures position linked to AGS (non-Pol trades only), sourced from Trades.</td></tr>
+            <tr><td><strong>Purchase Hedged</strong></td><td>True if:<br><code>|Purchase Hedges (lots)| = |Long Physical Qty (lots)|</code></td></tr>
+            <tr><td><strong>Sales Hedged</strong></td><td>True if:<br><code>|Sales Hedges (lots)| = |Short Physical Qty (lots)|</code></td></tr>
+            <tr><td><strong>Purchase Pol Hedge</strong></td><td>Net futures position linked to AGP (Pol trades only), sourced from Trades.</td></tr>
+            <tr><td><strong>Sales Pol Hedge</strong></td><td>Net futures position linked to AGS (Pol trades only), sourced from Trades.</td></tr>
+            <tr><td><strong>Options Delta</strong></td><td>Net delta exposure from options positions (AGP + AGS), sourced from Trades. Represents the effective futures-equivalent exposure after delta adjustment.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Settlement Prices</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Settlement</strong></td><td>Futures settlement price for purchase contract (from price table or RTD).</td></tr>
+            <tr><td><strong>Sales Settlement</strong></td><td>Futures settlement price for sales contract (from price table or RTD).</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Pricing Status</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Status</strong></td><td>Compares <code>|Hedges (lots)|</code> vs <code>|Physical Qty (lots)|</code>. All comparisons in lots, not MT.<br><strong>Basis trades:</strong><br>&bull; Hedges = 0 &rarr; Unpriced<br>&bull; Hedges &lt; Qty &rarr; Partially Priced<br>&bull; Hedges = Qty &rarr; Fully Priced<br>&bull; Hedges &gt; Qty &rarr; Over Priced<br><strong>Flat trades:</strong><br>&bull; Hedges = 0 &rarr; Unhedged<br>&bull; Hedges &lt; Qty &rarr; Partially Hedged<br>&bull; Hedges = Qty &rarr; Fully Hedged<br>&bull; Hedges &gt; Qty &rarr; Over Hedged</td></tr>
+            <tr><td><strong>Sales Status</strong></td><td>Same logic as Purchase Status, comparing Sales Hedges vs Short Physical Qty.<br>Special rule: returns "Delivered" if AGS = Delivered (takes priority over all other logic).</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Futures Pricing Logic</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Futures Pricing</strong></td><td><strong>Fully Hedged:</strong> <code>Total Hedge Cost &divide; Hedge Lots</code><br><strong>Partially Hedged:</strong> <code>(Hedged Portion + Unhedged Portion &times; Settlement) &divide; Total Qty</code><br><strong>Unhedged:</strong> Settlement Price</td></tr>
+            <tr><td><strong>Sales Futures Pricing</strong></td><td>Same logic applied to sales side.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Basis</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Basis</strong></td><td><strong>Basis trades:</strong> input basis value<br><strong>Flat trades:</strong> derived: <code>Purchase Input &minus; Purchase Futures Pricing</code></td></tr>
+            <tr><td><strong>Sales Basis</strong></td><td><strong>Basis trades:</strong> input basis value<br><strong>Flat trades:</strong> derived: <code>Sales Input &minus; Sales Futures Pricing</code></td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Prices</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Price</strong></td><td><strong>Basis (&cent;/lb):</strong> <code>(FP + Basis) &times; 22.0462 &times; (1 + Pol)</code><br><strong>Basis ($/MT):</strong> <code>(FP &times; 22.0462) + Basis</code><br><strong>Flat trades:</strong> Input Price<br>If Incoterm = FCA: subtract Elevation</td></tr>
+            <tr><td><strong>Sales Price</strong></td><td>Same structure as Purchase Price.</td></tr>
+            <tr><td><strong>Purchase Cost (CNF)</strong></td><td><code>Purchase Price + Freight + Insurance + Financing + Misc</code></td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Polarisation</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Long Physical Pol</strong></td><td>Long Physical Qty &times; Pol factor, adjusted by pricing status and units.</td></tr>
+            <tr><td><strong>Short Physical Pol</strong></td><td>&minus;(Short Physical Qty &times; Pol factor), adjusted by pricing status.</td></tr>
+            <tr><td><strong>Pol Exposure</strong></td><td>Net polarisation exposure:<br><code>Long Physical Pol + Short Physical Pol + Purchase Pol Hedge + Sales Pol Hedge</code><br>Represents residual exposure due to quality (pol) mismatch after hedging.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Exposure</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Long Physical Exposure</strong></td><td><strong>Basis trades:</strong><br>&bull; If Over Priced &rarr; Long Physical Qty<br>&bull; Otherwise &rarr; &minus;Purchase Hedges<br><strong>Flat trades:</strong><br>&bull; Always Long Physical Qty</td></tr>
+            <tr><td><strong>Short Physical Exposure</strong></td><td><strong>Basis trades:</strong><br>&bull; If Over Priced &rarr; Short Physical Qty<br>&bull; Otherwise &rarr; &minus;Sales Hedges<br><strong>Flat trades:</strong><br>&bull; Always Short Physical Qty</td></tr>
+            <tr><td><strong>Purchase Exposure</strong></td><td>Exposure contributed by the purchase leg:<br><strong>Basis trades:</strong> only contributes when over-priced<br><strong>Flat trades:</strong> full physical + hedge exposure</td></tr>
+            <tr><td><strong>Sales Exposure</strong></td><td>Same logic as Purchase Exposure, applied to the sales leg (AGS side).</td></tr>
+            <tr><td><strong>Overall Exposure</strong></td><td>Net exposure expressed in futures-equivalent lots:<br><code>= Purchase Exposure + Sales Exposure + Pol Exposure + Options Delta</code><br>Positive &rarr; net long | Negative &rarr; net short</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Spreads</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Spreads</strong></td><td>Net spread position from Trades (AGP + AGS). Uses <code>Trades[Spread Position]</code> (not <code>Trades[Position]</code>). Excludes "Pol" trades. Represents calendar or inter-contract spreads.</td></tr>
+            <tr><td><strong>Spread Value</strong></td><td>Average price per spread lot:<br><code>= Total Spread PnL &divide; Spread Lots</code><br>Sign determined by net spread position direction.</td></tr>
+            <tr><td><strong>Spread Exposure</strong></td><td>Residual exposure after accounting for spreads:<br>If purchase &ne; sales contract: <code>Long Physical Qty &minus; abs(Spreads)</code><br>If same contract: <code>&minus;abs(Spreads)</code></td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">PnL</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Physical PNL</strong></td><td><code>(Sales Price &minus; Purchase Cost CNF) &times; max(Qty Long, Qty Short)</code><br>Uses larger leg to reflect actual exposure.</td></tr>
+            <tr><td><strong>Futures PNL</strong></td><td>Net PnL from Trades (AGP + AGS):<br>&bull; Includes realised and mark-to-market PnL<br>&bull; Includes all futures trades (Pol and non-Pol)<br>&bull; Already aggregated at source</td></tr>
+            <tr><td><strong>Total PNL</strong></td><td><code>Physical PNL + Futures PNL</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Whites Column Guide Modal -->
+<div class="modal fade" id="whitesColumnGuideModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-question-circle me-2"></i>Whites &mdash; Calculated Columns Guide</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <h6 class="text-muted mb-2">Core Flags</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Hedged in SB</strong></td><td>True if purchase contract is SB-linked (&cent;/lb pricing requiring 22.0462 conversion to $/MT).</td></tr>
+            <tr><td><strong>Sales Hedged in SB</strong></td><td>True if sales contract is SB-linked (&cent;/lb pricing requiring 22.0462 conversion to $/MT).</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Physical Quantities</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Long Physical Qty (Lots)</strong></td><td>Physical long quantity converted into futures-equivalent lots:<br><code>= ROUND(Qty Long &divide; contract size, 0)</code><br>SB-linked: contract size = 50.8<br>Otherwise: contract size = 50</td></tr>
+            <tr><td><strong>Short Physical Qty (Lots)</strong></td><td>Physical short quantity converted into futures-equivalent lots:<br><code>= ROUND(&minus;Qty Short &divide; contract size, 0)</code><br>Same contract size logic as above.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Hedge Positions</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Hedges</strong></td><td>Net futures position linked to AGP. Includes both Pol and non-Pol trades, sourced from Trades.</td></tr>
+            <tr><td><strong>Sales Hedges</strong></td><td>Net futures position linked to AGS. Includes both Pol and non-Pol trades, sourced from Trades.</td></tr>
+            <tr><td><strong>Purchase Hedged</strong></td><td>True if:<br><code>|Purchase Hedges (lots)| = |Long Physical Qty (lots)|</code></td></tr>
+            <tr><td><strong>Sales Hedged</strong></td><td>True if:<br><code>|Sales Hedges (lots)| = |Short Physical Qty (lots)|</code></td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Settlement Prices</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Settlement</strong></td><td>Futures settlement price for purchase contract (from price table or RTD).</td></tr>
+            <tr><td><strong>Sales Settlement</strong></td><td>Futures settlement price for sales contract (from price table or RTD).</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Pricing Status</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Status</strong></td><td>Compares <code>|Hedges (lots)|</code> vs <code>|Physical Qty (lots)|</code>. All comparisons in lots, not MT.<br><strong>Basis trades:</strong><br>&bull; Hedges = 0 &rarr; Unpriced<br>&bull; Hedges &lt; Qty &rarr; Partially Priced<br>&bull; Hedges = Qty &rarr; Fully Priced<br>&bull; Hedges &gt; Qty &rarr; Over Priced<br><strong>Flat trades:</strong><br>&bull; Hedges = 0 &rarr; Unhedged<br>&bull; Hedges &lt; Qty &rarr; Partially Hedged<br>&bull; Hedges = Qty &rarr; Fully Hedged<br>&bull; Hedges &gt; Qty &rarr; Over Hedged</td></tr>
+            <tr><td><strong>Sales Status</strong></td><td>Same logic as Purchase Status, comparing Sales Hedges vs Short Physical Qty.<br>Special rule: returns "Delivered" if AGS = Delivered (takes priority over all other logic).</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Futures Pricing Logic</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Futures Pricing</strong></td><td><strong>Fully Hedged:</strong> <code>Total Hedge Cost &divide; Hedge Lots</code><br><strong>Partially Hedged:</strong> <code>(Hedged Portion + Unhedged Portion &times; Settlement) &divide; Total Qty</code><br><strong>Unhedged:</strong> Settlement Price</td></tr>
+            <tr><td><strong>Sales Futures Pricing</strong></td><td>Same logic applied to sales side.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Basis</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Basis</strong></td><td><strong>Basis trades:</strong> input basis value<br><strong>Flat trades:</strong> derived: <code>Purchase Input &minus; Purchase Futures Pricing</code></td></tr>
+            <tr><td><strong>Sales Basis</strong></td><td><strong>Basis trades:</strong> input basis value<br><strong>Flat trades:</strong> derived: <code>Sales Input &minus; Sales Futures Pricing</code></td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Prices</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Purchase Price</strong></td><td><strong>Basis trades:</strong> <code>Futures Price &times; Conversion Factor + Basis</code><br>Conversion factor: SB &rarr; 22.0462, otherwise &rarr; 1<br><strong>Flat trades:</strong> Input Price</td></tr>
+            <tr><td><strong>Sales Price</strong></td><td>Same structure as Purchase Price.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Cost</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>CNF</strong></td><td><code>Purchase Price + Freight + Insurance + Financing + Misc</code></td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Exposure</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Long Physical Exposure</strong></td><td><strong>Basis trades:</strong><br>&bull; If Over Priced &rarr; Long Physical Qty<br>&bull; Otherwise &rarr; &minus;Purchase Hedges<br><strong>Flat trades:</strong><br>&bull; Always Long Physical Qty</td></tr>
+            <tr><td><strong>Short Physical Exposure</strong></td><td><strong>Basis trades:</strong><br>&bull; If Over Priced &rarr; Short Physical Qty<br>&bull; Otherwise &rarr; &minus;Sales Hedges<br><strong>Flat trades:</strong><br>&bull; Always Short Physical Qty</td></tr>
+            <tr><td><strong>Purchase Exposure</strong></td><td>Exposure contributed by the purchase leg:<br><strong>Basis trades:</strong> only contributes when over-priced<br><strong>Flat trades:</strong> full physical + hedge exposure</td></tr>
+            <tr><td><strong>Sales Exposure</strong></td><td>Same logic as Purchase Exposure, applied to the sales leg (AGS side).</td></tr>
+            <tr><td><strong>Overall Exposure</strong></td><td>Net exposure expressed in futures-equivalent lots:<br><code>= Purchase Exposure + Sales Exposure</code><br>Positive &rarr; net long | Negative &rarr; net short</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">Spreads</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Spreads</strong></td><td>Net spread position from Trades (AGP + AGS). Uses <code>Trades[Spread Position]</code> (not <code>Trades[Position]</code>). Excludes "Pol" trades. Represents calendar or inter-contract spreads.</td></tr>
+            <tr><td><strong>Spread Value</strong></td><td>Average price per spread lot:<br><code>= Total Spread PnL &divide; Spread Lots</code><br>Sign determined by net spread position direction.</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="text-muted mb-2">PnL</h6>
+        <table class="table table-sm table-bordered mb-3" style="font-size:0.85em;">
+          <thead class="table-light"><tr><th style="width:30%;">Column</th><th>How it's calculated</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Physical PNL</strong></td><td><code>(Sales Price &minus; CNF) &times; max(Qty Long, Qty Short)</code><br>Uses larger leg to reflect actual exposure. Defaults to 0 if incomplete.</td></tr>
+            <tr><td><strong>Futures PNL</strong></td><td>Net PnL from Trades (AGP + AGS):<br>&bull; Includes realised and mark-to-market PnL<br>&bull; Includes all futures trades (Pol and non-Pol)<br>&bull; Already aggregated at source</td></tr>
+            <tr><td><strong>Total PNL</strong></td><td><code>Physical PNL + Futures PNL</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

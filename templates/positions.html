@@ -1,0 +1,864 @@
+{% extends "base.html" %}
+{% block title %}FUTS Trades - Sugar Trading{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Flat trading blotter ── */
+  .blotter-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 80vh;
+    border: 1px solid #d0d0d0;
+  }
+  .blotter-table {
+    border-collapse: collapse;
+    white-space: nowrap;
+    width: max-content;
+    min-width: 100%;
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.15;
+    background: #fff;
+  }
+
+  /* ── Header: 2-row, flat, no rounded corners ── */
+  .blotter-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: center;
+    vertical-align: middle;
+    border: none;
+    border-right: 1px solid #5a6268;
+    border-bottom: 1px solid #5a6268;
+    background: #545b62;
+    color: #d4d8dc;
+  }
+  .blotter-table thead th:last-child { border-right: none; }
+  .blotter-table thead th.calc-header {
+    color: #ffc107;
+    background: #545b62;
+  }
+
+  /* ── Rows: flat, dense, horizontal rules only ── */
+  .blotter-table td {
+    padding: 2px 8px;
+    height: 22px;
+    vertical-align: middle;
+    text-align: center;
+    border: none;
+    border-bottom: 1px solid #e9ecef;
+    border-right: none;
+    background: #fff;
+  }
+  .blotter-table tbody tr:nth-child(4n+1) td { background: #fcfcfc; }
+  .blotter-table tbody tr:hover td { background-color: #f0f4ff !important; }
+  .blotter-table tbody tr.row-active td { background-color: #e3eafc !important; }
+  .blotter-table tbody tr.table-warning td { background-color: #fff9e6 !important; }
+
+  /* ── Numeric alignment ── */
+  .text-num { text-align: center; font-variant-numeric: tabular-nums; }
+  .text-status { text-align: center; }
+
+  /* ── Secondary (muted) columns ── */
+  .col-secondary { font-size: 11px; color: #9ca3af; }
+
+  /* ── Directional position: NET = hero column ── */
+  .pos-long { color: #198754; font-weight: 700; font-size: 14px; }
+  .pos-short { color: #dc3545; font-weight: 700; font-size: 14px; }
+  .pos-flat { color: #bbb; }
+
+  /* ── PnL: bold text, very light tint, text is the signal ── */
+  .pnl-cell { font-size: 14px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .pnl-pos-1 { color: #198754; }
+  .pnl-pos-2 { color: #157347; background: rgba(25,135,84,0.06); }
+  .pnl-pos-3 { color: #0f5132; background: rgba(25,135,84,0.10); }
+  .pnl-neg-1 { color: #dc3545; }
+  .pnl-neg-2 { color: #b02a37; background: rgba(220,53,69,0.06); }
+  .pnl-neg-3 { color: #842029; background: rgba(220,53,69,0.10); }
+
+  /* ── Editable cells: invisible until hover ── */
+  .editable-cell { cursor: text; }
+  .editable-cell:hover { background-color: #eef3ff !important; }
+
+  /* ── Checkboxes ── */
+  .row-check, #selectAll { width: 14px; height: 14px; cursor: pointer; accent-color: #0d6efd; }
+
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .filter-ctrl {
+    height: 30px;
+    font-size: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 2px 8px;
+    background: #fff;
+    color: #374151;
+    outline: none;
+    min-width: 0;
+  }
+  .filter-ctrl:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  }
+  select.filter-ctrl { padding-right: 24px; cursor: pointer; }
+  input[type="date"].filter-ctrl { width: 130px; }
+  input[type="number"].filter-ctrl { width: 90px; }
+  input[type="text"].filter-ctrl { width: 110px; }
+  select.filter-ctrl { width: auto; min-width: 80px; max-width: 200px; }
+  .filter-apply {
+    height: 30px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0 14px;
+    cursor: pointer;
+  }
+  .filter-apply:hover { background: #1d4ed8; }
+  .filter-clear {
+    height: 30px;
+    font-size: 12px;
+    font-weight: 500;
+    background: none;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 0 10px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+  .filter-clear:hover { background: #f3f4f6; color: #374151; }
+
+  /* ── Sticky columns ── */
+  .sticky-col { position: sticky; z-index: 3; }
+  thead .sticky-col { z-index: 12 !important; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="mb-0">FUTS Trades</h4>
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-muted small">{{ pagination.total }} records</span>
+    <a href="{{ url_for('strategy_warnings.index') }}" class="btn btn-sm {% if invalid_strategy_count > 0 %}btn-warning{% else %}btn-outline-secondary{% endif %}">
+      <i class="bi bi-exclamation-triangle me-1"></i>Strategy Warnings
+      {% if invalid_strategy_count > 0 %}<span class="badge bg-dark ms-1">{{ invalid_strategy_count }}</span>{% endif %}
+    </a>
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#clearAllModal">
+      <i class="bi bi-trash me-1"></i>Clear All Trades
+    </button>
+    <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
+      <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#d4d8dc;border-radius:2px;font-size:11px;font-weight:600;">COL</span><span class="text-muted">Editable</span>
+      <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#ffc107;border-radius:2px;font-size:11px;font-weight:600;margin-left:6px;">COL</span><span class="text-muted">Calculated</span>
+    </span>
+  </div>
+</div>
+
+{% set active_count = [date_filter, contract_filter, price_filter, book_filter, status_filter, put_call_filter, strike_filter, instrument_filter, spread_filter, contract_xl_filter, trade_id_filter]|select|list|length %}
+<form method="GET" action="{{ url_for('positions.index') }}" class="filter-bar">
+  <input type="date" name="date_filter" value="{{ date_filter }}" class="filter-ctrl" title="Trade Date">
+  <select name="contract_filter" class="filter-ctrl">
+    <option value="">Contract</option>
+    {% for c in contract_options %}
+      <option value="{{ c }}" {% if contract_filter == c %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <input type="number" name="price_filter" value="{{ price_filter }}" placeholder="Price..." step="any" class="filter-ctrl">
+  <select name="book_filter" class="filter-ctrl">
+    <option value="">Book</option>
+    {% for book in book_options %}
+      <option value="{{ book }}" {% if book_filter == book %}selected{% endif %}>{{ book }}</option>
+    {% endfor %}
+    <option value="__empty__" {% if book_filter == '__empty__' %}selected{% endif %}>Empty</option>
+  </select>
+  <select name="status_filter" class="filter-ctrl">
+    <option value="">Status</option>
+    {% for s in status_options %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="put_call_filter" class="filter-ctrl">
+    <option value="">P/C</option>
+    {% for pc in put_call_options %}
+      <option value="{{ pc }}" {% if put_call_filter == pc %}selected{% endif %}>{{ pc }}</option>
+    {% endfor %}
+    <option value="__empty__" {% if put_call_filter == '__empty__' %}selected{% endif %}>Empty</option>
+  </select>
+  <select name="strike_filter" class="filter-ctrl">
+    <option value="">Strike</option>
+    {% for s in strike_options %}
+      <option value="{{ s }}" {% if strike_filter == s|string %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="instrument_filter" class="filter-ctrl">
+    <option value="">Instrument</option>
+    {% for inst in instrument_options %}
+      <option value="{{ inst }}" {% if instrument_filter == inst %}selected{% endif %}>{{ inst }}</option>
+    {% endfor %}
+    <option value="__empty__" {% if instrument_filter == '__empty__' %}selected{% endif %}>Empty</option>
+  </select>
+  <select name="spread_filter" class="filter-ctrl">
+    <option value="">Spread</option>
+    {% for s in spread_options %}
+      <option value="{{ s }}" {% if spread_filter == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+    <option value="__empty__" {% if spread_filter == '__empty__' %}selected{% endif %}>Empty</option>
+  </select>
+  <input type="text" name="contract_xl_filter" class="filter-ctrl" value="{{ contract_xl_filter }}" placeholder="XL Ref...">
+  <select name="trade_id_filter" class="filter-ctrl">
+    <option value="">Trade ID</option>
+    {% for tid in trade_id_options %}
+      <option value="{{ tid }}" {% if trade_id_filter == tid %}selected{% endif %}>{{ tid }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="filter-apply">Apply</button>
+  {% if active_count > 0 %}
+    <a href="{{ url_for('positions.index') }}" class="filter-clear">Clear ({{ active_count }})</a>
+  {% endif %}
+</form>
+
+{% if invalid_strategy_count > 0 %}
+<div class="alert alert-warning alert-dismissible fade show py-2 mb-2" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-1"></i>
+  <strong>{{ invalid_strategy_count }}</strong> record(s) have an empty or malformed Strategy field — Instrument, Spread Contract, Contract XL, and Book will show "—". Re-sync from Salesforce after fixing the data.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="mb-2 d-flex align-items-center gap-2 flex-wrap">
+  <span class="text-muted small fw-semibold">{{ pagination.total }} record(s)</span>
+  <span class="text-muted small">|</span>
+  <span class="text-muted small">Position:
+    <span class="fw-semibold text-dark">{{ "%.1f"|format(total_position) if total_position is not none else "—" }}</span>
+  </span>
+  <span class="text-muted small">|</span>
+  <span class="text-muted small">Spread Position:
+    <span class="fw-semibold {% if total_spread_pos is not none and total_spread_pos < 0 %}text-danger{% else %}text-dark{% endif %}">
+      {{ "%.1f"|format(total_spread_pos) if total_spread_pos is not none else "—" }}
+    </span>
+  </span>
+  <span class="text-muted small">|</span>
+  <span class="text-muted small">PNL:
+    <span class="fw-semibold {% if total_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">${{ "{:,.0f}".format(total_pnl) }}</span>
+  </span>
+  <span class="text-muted small">|</span>
+  <span class="text-muted small">Net PNL:
+    <span class="fw-semibold {% if total_net_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">${{ "{:,.0f}".format(total_net_pnl) }}</span>
+  </span>
+</div>
+
+<!-- Unsaved changes bar -->
+<div id="saveBar" class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="display:none!important;">
+  <i class="bi bi-pencil-square"></i>
+  <span id="saveBarMsg"><strong id="pendingCount">0</strong> unsaved change(s)</span>
+  <button class="btn btn-primary btn-sm ms-auto" id="saveAllBtn">
+    <i class="bi bi-floppy me-1"></i>Save Locally
+  </button>
+  <button class="btn btn-success btn-sm" id="savePushBtn">
+    <i class="bi bi-cloud-upload me-1"></i>Save &amp; Push to Salesforce
+  </button>
+  <button class="btn btn-outline-secondary btn-sm" id="discardAllBtn">Discard</button>
+</div>
+
+{% if pagination.items %}
+  <div class="blotter-wrap">
+    <table class="blotter-table" id="blotterTable">
+      <thead>
+        <tr>
+          <th style="width:28px;"><input type="checkbox" id="selectAll" title="Select all"></th>
+          <th style="min-width:82px;">Date</th>
+          <th>Book</th>
+          <th>Contract</th>
+          <th>Instrument</th>
+          <th>Spread</th>
+          <th>Trader</th>
+          <th>Long</th>
+          <th>Short</th>
+          <th class="calc-header">Net</th>
+          <th class="calc-header">Pos</th>
+          <th class="calc-header">Sprd Pos</th>
+          <th>Price</th>
+          <th class="calc-header">Sett</th>
+          <th class="calc-header">Sett-2</th>
+          <th>Strike</th>
+          <th>P/C</th>
+          <th>Comm</th>
+          <th class="calc-header">Delta</th>
+          <th class="calc-header">Px Tot</th>
+          <th class="calc-header">Sett Tot</th>
+          <th class="calc-header">PnL</th>
+          <th class="calc-header">Net PnL</th>
+          <th class="calc-header">Change</th>
+          <th>ID</th>
+          <th>Code</th>
+          <th>Status</th>
+          <th>Group</th>
+          <th>Broker</th>
+          <th>XL Ref</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for position in pagination.items %}
+          {% set strategy_valid = position.instrument is not none %}
+          {% set ls = (position.data.get('Long__c') or 0) + (position.data.get('Short__c') or 0) %}
+          {% set delta = delta_map.get(position.sf_id) %}
+          {% set settlement = settlement_map.get(position.sf_id) %}
+          {% set settlement2 = settlement2_map.get(position.sf_id) %}
+          {% set pnl = pnl_map.get(position.sf_id) %}
+          {% set pnl_change = pnl_change_map.get(position.sf_id) %}
+          {% set commission = position.data.get('Broker_Commission__c') or 0 %}
+
+          <tr data-sf-id="{{ position.sf_id }}" {% if not strategy_valid %}class="table-warning"{% endif %}>
+            <td><input type="checkbox" class="row-check" value="{{ position.sf_id }}"></td>
+
+            {# ── CONTEXT (6) ── #}
+            <td class="editable-cell" data-field="Trade_Date__c" data-value="{{ position.data.get('Trade_Date__c') or '' }}">{{ position.data.get('Trade_Date__c') or '' }}</td>
+            <td class="editable-cell" data-field="book_parsed" data-value="{{ position.book_parsed or '' }}">{{ position.book_parsed or '—' }}</td>
+            {% set contract = (position.data.get('Contract__c') or '')|replace(' ', '') %}
+            {% set put_call = position.data.get('Put_Call_2__c') %}
+            {% set strike_v = position.data.get('Strike__c') %}
+            <td class="editable-cell" data-field="Contract__c" data-value="{{ contract }}">{%- if put_call and strike_v is not none -%}{{ contract|format_contract }}{{ put_call[0] }}{{ (strike_v * 100)|round|int }}{%- else -%}{{ contract|format_contract }}{%- endif -%}</td>
+            <td class="editable-cell col-secondary" data-field="instrument" data-value="{{ position.instrument or '' }}">{{ position.instrument or '—' }}</td>
+            <td class="editable-cell col-secondary" data-field="spread" data-value="{{ position.spread or '' }}">{{ position.spread or '—' }}</td>
+            <td class="editable-cell col-secondary" data-field="Trader__c" data-value="{{ position.data.get('Trader__c') or '' }}">{{ position.data.get('Trader__c') or '' }}</td>
+
+            {# ── POSITION (5) ── #}
+            {% set long_val = position.data.get('Long__c') %}
+            {% set short_val = position.data.get('Short__c') %}
+            <td class="editable-cell text-num" data-field="Long__c" data-value="{{ long_val if long_val is not none else '' }}">{{ long_val if long_val is not none else 0 }}</td>
+            <td class="editable-cell text-num" data-field="Short__c" data-value="{{ short_val if short_val is not none else '' }}">{{ short_val if short_val is not none else 0 }}</td>
+            <td class="text-num">
+              {% if ls > 0 %}
+                <span class="pos-long">&#9650; {{ ls|int }}</span>
+              {% elif ls < 0 %}
+                <span class="pos-short">&#9660; {{ ls|int|abs }}</span>
+              {% else %}
+                <span class="pos-flat">0</span>
+              {% endif %}
+            </td>
+            <td class="text-num">
+              {% if delta is not none %}
+                {% set pos_val = delta * ls %}
+                {% if pos_val > 0 %}
+                  <span class="pos-long">{{ "%.1f"|format(pos_val) }}</span>
+                {% elif pos_val < 0 %}
+                  <span class="pos-short">{{ "%.1f"|format(pos_val) }}</span>
+                {% else %}
+                  <span class="pos-flat">0</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            {# Spread Position #}
+            <td class="text-num">
+              {% set inst = (position.instrument or '') %}
+              {% if inst != 'Spread' %}
+                0
+              {% else %}
+                {% set spread_c = position.spread or '' %}
+                {% if not spread_c %}
+                  0
+                {% else %}
+                  {% set contract_last3 = ((position.data.get('Contract__c') or '') | replace(' ', ''))[-3:] %}
+                  {% set spread_last3 = spread_c[-3:] %}
+                  {% if contract_last3 == spread_last3 %}
+                    0
+                  {% elif delta is not none %}
+                    {{ "%.1f"|format(ls * delta) }}
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+            </td>
+
+            {# ── PRICING (6) ── #}
+            {% set price_val = position.data.get('Price__c') %}
+            <td class="editable-cell text-num" data-field="Price__c" data-value="{{ price_val if price_val is not none else '' }}">{{ "%.2f"|format(price_val) if price_val is not none else '' }}</td>
+            <td class="text-num">{{ "%.2f"|format(settlement) if settlement is not none else '—' }}</td>
+            <td class="text-num col-secondary">{{ "%.2f"|format(settlement2) if settlement2 is not none else '—' }}</td>
+            <td class="editable-cell text-num col-secondary" data-field="Strike__c" data-value="{{ strike_v if strike_v is not none else '' }}">{{ "%.2f"|format(strike_v) if strike_v is not none else '' }}</td>
+            <td class="editable-cell text-status col-secondary" data-field="Put_Call_2__c" data-value="{{ put_call or '' }}">{{ put_call or '' }}</td>
+            <td class="editable-cell text-num col-secondary" data-field="Broker_Commission__c" data-value="{{ position.data.get('Broker_Commission__c') or '' }}">{{ "%.2f"|format(commission) }}</td>
+
+            {# ── RISK (1) ── #}
+            <td class="text-num">{{ "%.2f"|format(delta) if delta is not none else '—' }}</td>
+
+            {# ── PNL (5): Price Total, Sett Total, PnL, Net PnL, Change ── #}
+            {% set tp = position.data.get('Price__c') %}
+            <td class="text-num col-secondary">{% if tp is not none %}{{ "%.2f"|format(ls * tp) }}{% else %}—{% endif %}</td>
+            <td class="text-num col-secondary">{% if settlement is not none %}{{ "%.2f"|format(ls * settlement) }}{% else %}—{% endif %}</td>
+
+            {% if pnl is not none %}
+              {% set abs_pnl = pnl|abs %}
+              <td class="pnl-cell {% if pnl >= 0 %}{% if abs_pnl > 10000 %}pnl-pos-3{% elif abs_pnl > 1000 %}pnl-pos-2{% else %}pnl-pos-1{% endif %}{% else %}{% if abs_pnl > 10000 %}pnl-neg-3{% elif abs_pnl > 1000 %}pnl-neg-2{% else %}pnl-neg-1{% endif %}{% endif %}">
+                ${{ "{:,.0f}".format(pnl) }}
+              </td>
+            {% else %}
+              <td class="pnl-cell text-muted">—</td>
+            {% endif %}
+
+            {% if pnl is not none %}
+              {% set net_pnl = pnl + commission %}
+              {% set abs_net = net_pnl|abs %}
+              <td class="pnl-cell {% if net_pnl >= 0 %}{% if abs_net > 10000 %}pnl-pos-3{% elif abs_net > 1000 %}pnl-pos-2{% else %}pnl-pos-1{% endif %}{% else %}{% if abs_net > 10000 %}pnl-neg-3{% elif abs_net > 1000 %}pnl-neg-2{% else %}pnl-neg-1{% endif %}{% endif %}">
+                ${{ "{:,.0f}".format(net_pnl) }}
+              </td>
+            {% else %}
+              <td class="pnl-cell text-muted">—</td>
+            {% endif %}
+
+            {% if pnl_change is not none %}
+              {% set abs_chg = pnl_change|abs %}
+              <td class="pnl-cell {% if pnl_change >= 0 %}{% if abs_chg > 10000 %}pnl-pos-3{% elif abs_chg > 1000 %}pnl-pos-2{% else %}pnl-pos-1{% endif %}{% else %}{% if abs_chg > 10000 %}pnl-neg-3{% elif abs_chg > 1000 %}pnl-neg-2{% else %}pnl-neg-1{% endif %}{% endif %}">
+                ${{ "{:,.0f}".format(pnl_change) }}
+              </td>
+            {% else %}
+              <td class="pnl-cell text-muted">—</td>
+            {% endif %}
+
+            {# ── META (8) ── #}
+            <td class="editable-cell col-secondary" data-field="Trade_Key__c" data-value="{{ position.data.get('Trade_Key__c') or '' }}">{{ position.data.get('Trade_Key__c') or '' }}</td>
+            <td class="editable-cell col-secondary" data-field="Trade_Code__c" data-value="{{ position.data.get('Trade_Code__c') or '' }}">{{ position.data.get('Trade_Code__c') or '' }}</td>
+            <td class="editable-cell text-status col-secondary" data-field="Realised__c" data-value="{{ position.data.get('Realised__c') or '' }}">{{ position.data.get('Realised__c') or '' }}</td>
+            <td class="editable-cell col-secondary" data-field="Trade_Group__c" data-value="{{ position.data.get('Trade_Group__c') or '' }}">{{ position.data.get('Trade_Group__c') or '' }}</td>
+            <td class="editable-cell col-secondary" data-field="Broker_Name__c" data-value="{{ position.data.get('Broker_Name__c') or '' }}">{{ position.data.get('Broker_Name__c') or '' }}</td>
+            <td class="editable-cell col-secondary" data-field="contract_xl" data-value="{{ position.contract_xl or '' }}">{{ position.contract_xl or '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pagination.pages > 1 %}
+  {% set qs %}{% if date_filter %}&date_filter={{ date_filter }}{% endif %}{% if contract_filter %}&contract_filter={{ contract_filter }}{% endif %}{% if price_filter %}&price_filter={{ price_filter }}{% endif %}{% if book_filter %}&book_filter={{ book_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if contract_xl_filter %}&contract_xl_filter={{ contract_xl_filter }}{% endif %}{% if instrument_filter %}&instrument_filter={{ instrument_filter }}{% endif %}{% if spread_filter %}&spread_filter={{ spread_filter }}{% endif %}{% endset %}
+  <nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+      <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+        <a class="page-link" href="?page={{ pagination.prev_num }}{{ qs }}">Previous</a>
+      </li>
+      {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+          <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            <a class="page-link" href="?page={{ p }}{{ qs }}">{{ p }}</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+        <a class="page-link" href="?page={{ pagination.next_num }}{{ qs }}">Next</a>
+      </li>
+    </ul>
+  </nav>
+  {% endif %}
+
+{% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-inbox fs-1"></i>
+    <p class="mt-2">No trade positions yet. Click <strong>Sync Now</strong> on the dashboard to pull data from Salesforce.</p>
+    <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+  </div>
+{% endif %}
+
+<!-- Clear All confirmation modal -->
+<div class="modal fade" id="clearAllModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Clear All Trades</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <p class="mb-1">This will delete all <strong>{{ pagination.total }}</strong> trade records from the local database.</p>
+        <p class="text-muted small mb-0">You can re-sync from Salesforce afterwards.</p>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <form method="POST" action="{{ url_for('positions.clear_all') }}" style="display:inline;">
+          <button type="submit" class="btn btn-danger btn-sm">Yes, Clear All</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk scope modal -->
+<div class="modal fade" id="bulkApplyModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0">Apply change to&hellip;</h6>
+      </div>
+      <div class="modal-body py-2">
+        <p class="mb-2 small text-muted" id="bulkApplyMsg"></p>
+        <div class="d-grid gap-2">
+          <button class="btn btn-outline-primary btn-sm" id="applyThisRow">This row only</button>
+          <button class="btn btn-primary btn-sm" id="applyAllSelected">All selected rows (<span id="selectedCount">0</span>)</button>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" id="cancelApply">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const NUMERIC_FIELDS = new Set(["Long__c", "Short__c", "Price__c", "Strike__c", "Broker_Commission__c"]);
+  const STRATEGY_FIELDS = new Set(["instrument", "spread", "contract_xl", "book_parsed"]);
+  const DROPDOWN_OPTIONS = {
+    book_parsed:  ["Alpha", "Whites", "Raws"],
+    instrument:   ["Options", "Futures", "Spread"],
+    Realised__c:  ["Unrealised", "Realised"],
+  };
+  const DIRTY_COLOR = "#fff8d6";
+  const API_URL = "{{ url_for('positions.api_update') }}";
+
+  let editingCell = null;
+  let pendingEdit = null;
+  const pendingChanges = {};
+  const localOnlyChanges = {};
+
+  /* ── Select All ── */
+  document.getElementById("selectAll")?.addEventListener("change", function () {
+    document.querySelectorAll(".row-check").forEach(cb => cb.checked = this.checked);
+  });
+
+  /* ── Inline editing (works on both main row td and detail row span) ── */
+  document.querySelectorAll(".editable-cell").forEach(el => {
+    el.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (editingCell && editingCell.td === el) return;
+      if (editingCell) commitEdit(editingCell);
+
+      const field = el.dataset.field;
+      const currentValue = el.dataset.value;
+      const tr = el.closest("tr[data-sf-id]");
+      if (!tr) return;
+      const sfId = tr.dataset.sfId;
+      editingCell = { td: el, sfId, field, originalValue: currentValue };
+
+      const isNumeric = NUMERIC_FIELDS.has(field);
+      const dropdownChoices = DROPDOWN_OPTIONS[field];
+      el.textContent = "";
+
+      if (dropdownChoices) {
+        const select = document.createElement("select");
+        select.className = "form-select form-select-sm";
+        select.style.minWidth = "80px";
+        select.style.fontSize = "0.78rem";
+        dropdownChoices.forEach(opt => {
+          const o = document.createElement("option");
+          o.value = opt; o.textContent = opt;
+          if (opt === currentValue) o.selected = true;
+          select.appendChild(o);
+        });
+        el.appendChild(select);
+        select.focus();
+        select.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter")  { ev.preventDefault(); commitEdit(editingCell); }
+          if (ev.key === "Escape") { ev.preventDefault(); cancelEdit(editingCell); }
+        });
+        select.addEventListener("blur", function () {
+          setTimeout(() => { if (editingCell) commitEdit(editingCell); }, 150);
+        });
+        select.addEventListener("change", function () { commitEdit(editingCell); });
+      } else {
+        const input = document.createElement("input");
+        input.type = isNumeric ? "number" : "text";
+        input.step = "any";
+        input.value = currentValue;
+        input.className = "form-control form-control-sm" + (isNumeric ? " text-end" : "");
+        input.style.minWidth = isNumeric ? "60px" : "70px";
+        input.style.fontSize = "0.78rem";
+        el.appendChild(input);
+        input.focus();
+        input.select();
+        input.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter")  { ev.preventDefault(); commitEdit(editingCell); }
+          if (ev.key === "Escape") { ev.preventDefault(); cancelEdit(editingCell); }
+        });
+        input.addEventListener("blur", function () {
+          setTimeout(() => { if (editingCell) commitEdit(editingCell); }, 150);
+        });
+      }
+    });
+  });
+
+  document.addEventListener("click", function (e) {
+    if (editingCell && !e.target.closest(".blotter-table") && !e.target.closest("#bulkApplyModal")) {
+      commitEdit(editingCell);
+    }
+  });
+
+  function cancelEdit(state) {
+    editingCell = null;
+    state.td.textContent = state.td.dataset.value || '—';
+  }
+
+  function commitEdit(state) {
+    editingCell = null;
+    const input = state.td.querySelector("input") || state.td.querySelector("select");
+    if (!input) return;
+    const newValue = input.value.trim();
+
+    if (newValue === state.originalValue) {
+      state.td.textContent = state.originalValue || '—';
+      return;
+    }
+
+    if (STRATEGY_FIELDS.has(state.field) && newValue.includes('-')) {
+      alert(`"${newValue}" contains a hyphen (-). Strategy components cannot contain hyphens.`);
+      state.td.textContent = state.originalValue || '—';
+      return;
+    }
+
+    const checkedIds = getCheckedIds();
+    const isCurrentSelected = checkedIds.includes(state.sfId);
+    if (checkedIds.length > 1 && isCurrentSelected) {
+      pendingEdit = { sfId: state.sfId, field: state.field, value: newValue };
+      state.td.textContent = state.td.dataset.value;
+      showBulkModal(checkedIds.length, state.field, newValue);
+      return;
+    }
+
+    stageChange(state.sfId, state.field, newValue);
+  }
+
+  function stageChange(sfId, field, value) {
+    const key = `${sfId}|${field}`;
+    pendingChanges[key] = { sf_id: sfId, field, value };
+    const tr = document.querySelector(`tr[data-sf-id="${sfId}"]`);
+    if (tr) {
+      const td = tr.querySelector(`.editable-cell[data-field="${field}"]`);
+      if (td) {
+        td.textContent = value || '—';
+        td.dataset.value = value;
+        td.style.backgroundColor = DIRTY_COLOR;
+      }
+    }
+    // Long/Short mutual exclusivity
+    if (value !== "" && (field === "Long__c" || field === "Short__c")) {
+      const counterpart = field === "Long__c" ? "Short__c" : "Long__c";
+      const counterKey = `${sfId}|${counterpart}`;
+      pendingChanges[counterKey] = { sf_id: sfId, field: counterpart, value: "" };
+      if (tr) {
+        const counterTd = tr.querySelector(`.editable-cell[data-field="${counterpart}"]`);
+        if (counterTd) {
+          counterTd.textContent = "0";
+          counterTd.dataset.value = "";
+          counterTd.style.backgroundColor = DIRTY_COLOR;
+        }
+      }
+    }
+    updateSaveBar();
+  }
+
+  function clearDirty() {
+    document.querySelectorAll(".editable-cell").forEach(el => el.style.backgroundColor = "");
+  }
+
+  function updateSaveBar() {
+    const pendingCount = Object.keys(pendingChanges).length;
+    const localCount = Object.keys(localOnlyChanges).length;
+    const bar = document.getElementById("saveBar");
+    const saveAllBtn = document.getElementById("saveAllBtn");
+    if (pendingCount > 0 || localCount > 0) {
+      bar.style.removeProperty("display");
+      bar.style.display = "flex";
+      let msg;
+      if (pendingCount > 0 && localCount > 0) {
+        msg = `<strong>${pendingCount}</strong> unsaved + <strong>${localCount}</strong> pending SF push`;
+      } else if (pendingCount > 0) {
+        msg = `<strong>${pendingCount}</strong> unsaved change(s)`;
+      } else {
+        msg = `<strong>${localCount}</strong> change(s) pending Salesforce push`;
+      }
+      document.getElementById("saveBarMsg").innerHTML = msg;
+      if (saveAllBtn) saveAllBtn.style.display = pendingCount > 0 ? "" : "none";
+    } else {
+      bar.style.setProperty("display", "none", "important");
+    }
+  }
+
+  function saveChanges(pushToSf) {
+    const pendingCount = Object.keys(pendingChanges).length;
+    const localCount = Object.keys(localOnlyChanges).length;
+    if (pushToSf) {
+      if (!pendingCount && !localCount) return;
+      const merged = Object.assign({}, localOnlyChanges, pendingChanges);
+      const changes = Object.values(merged);
+      fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes, push_to_sf: true })
+      })
+      .then(r => r.json())
+      .then(result => {
+        if (!result.ok) {
+          alert("Save failed: " + (result.error || "Unknown error"));
+          location.reload();
+        } else {
+          if (result.sf_errors && result.sf_errors.length) {
+            alert("Saved locally, but some Salesforce updates failed:\n" + result.sf_errors.join("\n"));
+          }
+          Object.keys(localOnlyChanges).forEach(k => delete localOnlyChanges[k]);
+          Object.keys(pendingChanges).forEach(k => delete pendingChanges[k]);
+          clearDirty();
+          updateSaveBar();
+        }
+      })
+      .catch(() => { alert("Network error. Reloading."); location.reload(); });
+    } else {
+      if (!pendingCount) return;
+      const changes = Object.values(pendingChanges);
+      fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes, push_to_sf: false })
+      })
+      .then(r => r.json())
+      .then(result => {
+        if (!result.ok) {
+          alert("Save failed: " + (result.error || "Unknown error"));
+          location.reload();
+        } else {
+          Object.assign(localOnlyChanges, pendingChanges);
+          Object.keys(pendingChanges).forEach(k => delete pendingChanges[k]);
+          clearDirty();
+          updateSaveBar();
+        }
+      })
+      .catch(() => { alert("Network error. Reloading."); location.reload(); });
+    }
+  }
+
+  document.getElementById("saveAllBtn")?.addEventListener("click", () => saveChanges(false));
+  document.getElementById("savePushBtn")?.addEventListener("click", () => saveChanges(true));
+  document.getElementById("discardAllBtn")?.addEventListener("click", () => location.reload());
+
+  /* ── Bulk edit modal ── */
+  let bulkModal = null;
+  function getBulkModal() {
+    if (!bulkModal) bulkModal = new bootstrap.Modal(document.getElementById("bulkApplyModal"));
+    return bulkModal;
+  }
+
+  function showBulkModal(count, field, value) {
+    const labels = {
+      Trade_Date__c: "Trade Date", Book__c: "Book", Trader__c: "Trader",
+      Broker_Name__c: "Broker", Contract__c: "Contract", "New_AGP__r.Name": "Contract Reference", "New_AGS__r.Name": "Contract Reference",
+      Contract_type__c: "Instrument", Strategy__c: "Spread Contract",
+      Long__c: "Long", Short__c: "Short", Price__c: "Trade Price",
+      Strike__c: "Strike", Put_Call_2__c: "Put/Call",
+      Broker_Commission__c: "Broker Commission", Realised__c: "Status",
+      Trade_Code__c: "Trade Code", Trade_Key__c: "Trade ID", Trade_Group__c: "Group",
+      instrument: "Instrument", spread: "Spread Contract",
+      book_parsed: "Book", contract_xl: "Contract XL"
+    };
+    document.getElementById("bulkApplyMsg").textContent = `Set ${labels[field] || field} to "${value || "(blank)"}"`;
+    document.getElementById("selectedCount").textContent = count;
+    getBulkModal().show();
+  }
+
+  document.getElementById("applyThisRow")?.addEventListener("click", function () {
+    getBulkModal().hide();
+    if (!pendingEdit) return;
+    const { sfId, field, value } = pendingEdit;
+    pendingEdit = null;
+    stageChange(sfId, field, value);
+  });
+
+  document.getElementById("applyAllSelected")?.addEventListener("click", function () {
+    getBulkModal().hide();
+    if (!pendingEdit) return;
+    const { field, value } = pendingEdit;
+    pendingEdit = null;
+    getCheckedIds().forEach(id => stageChange(id, field, value));
+  });
+
+  document.getElementById("cancelApply")?.addEventListener("click", function () {
+    getBulkModal().hide();
+    pendingEdit = null;
+  });
+
+  function getCheckedIds() {
+    return Array.from(document.querySelectorAll(".row-check:checked")).map(cb => cb.value);
+  }
+
+  /* ── Row click highlight ── */
+  document.querySelectorAll('#blotterTable tbody tr').forEach(tr => {
+    tr.addEventListener('click', function (e) {
+      if (e.target.closest('.editable-cell, input, select, button, a')) return;
+      document.querySelectorAll('#blotterTable tbody tr.row-active').forEach(r => r.classList.remove('row-active'));
+      this.classList.add('row-active');
+    });
+  });
+
+  /* ── Sticky column offsets ── */
+  function fixStickyColumns() {
+    const table = document.getElementById('blotterTable');
+    if (!table) return;
+    // Sticky columns: 0=checkbox, 1=Date, 2=Book, 3=Contract
+    const stickyCount = 4;
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) return;
+    const widths = [];
+    for (let i = 0; i < stickyCount; i++) {
+      const th = headerRow.children[i];
+      if (th) widths.push(th.offsetWidth);
+      else widths.push(0);
+    }
+    let cumLeft = 0;
+    for (let i = 0; i < stickyCount; i++) {
+      // Apply to all rows (header rows + body rows)
+      table.querySelectorAll('thead tr').forEach(tr => {
+        const cell = tr.children[i];
+        if (cell && !cell.hasAttribute('colspan')) {
+          cell.classList.add('sticky-col');
+          cell.style.left = cumLeft + 'px';
+          cell.style.background = cell.style.background || getComputedStyle(cell).backgroundColor;
+        }
+      });
+      table.querySelectorAll('tbody tr').forEach(tr => {
+        const cell = tr.children[i];
+        if (cell) {
+          cell.classList.add('sticky-col');
+          cell.style.left = cumLeft + 'px';
+          if (!cell.style.background || cell.style.background === '') {
+            cell.style.background = '#fff';
+          }
+        }
+      });
+      cumLeft += widths[i];
+    }
+  }
+  // Run after render
+  setTimeout(fixStickyColumns, 100);
+
+})();
+</script>
+{% endblock %}

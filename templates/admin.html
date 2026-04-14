@@ -1,0 +1,611 @@
+{% extends "base.html" %}
+{% block title %}Admin - Sugar Trading{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Admin page styles ─────────────────────────────────────────────────── */
+  .admin-section { margin-bottom: 2rem; }
+
+  /* KPI metric cards */
+  .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .kpi-card {
+    flex: 1; min-width: 130px; max-width: 200px;
+    border-radius: 10px; padding: 1rem 1.25rem;
+    background: #f8f9fa; border: 1px solid #e9ecef;
+    transition: box-shadow 0.15s;
+  }
+  .kpi-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .kpi-card .kpi-label { font-size: 0.75rem; color: #6c757d; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.25rem; }
+  .kpi-card .kpi-value { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+  .kpi-card.kpi-success { border-left: 4px solid #198754; }
+  .kpi-card.kpi-success .kpi-value { color: #198754; }
+  .kpi-card.kpi-warning { border-left: 4px solid #ffc107; }
+  .kpi-card.kpi-warning .kpi-value { color: #856404; }
+  .kpi-card.kpi-danger  { border-left: 4px solid #dc3545; }
+  .kpi-card.kpi-danger  .kpi-value { color: #dc3545; }
+  .kpi-card.kpi-neutral { border-left: 4px solid #6c757d; }
+  .kpi-card.kpi-neutral .kpi-value { color: #212529; }
+  .kpi-card.kpi-info    { border-left: 4px solid #0dcaf0; }
+  .kpi-card.kpi-info    .kpi-value { color: #055160; }
+
+  /* Hero status bar */
+  .hero-status {
+    border-radius: 10px; padding: 1rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+    font-size: 1.05rem; font-weight: 600;
+    margin-bottom: 1.5rem;
+  }
+  .hero-status i { font-size: 1.5rem; }
+  .hero-status.hero-success { background: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+  .hero-status.hero-warning { background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
+  .hero-status.hero-info    { background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
+
+  /* Diagnostic grid */
+  .diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+  .diag-item { background: #f8f9fa; border-radius: 6px; padding: 0.6rem 1rem; border: 1px solid #e9ecef; }
+  .diag-item .diag-label { font-size: 0.72rem; color: #6c757d; text-transform: uppercase; letter-spacing: 0.04em; }
+  .diag-item .diag-value { font-size: 1rem; font-weight: 600; }
+
+  /* Action buttons */
+  .btn-push { padding: 0.6rem 2rem; font-size: 1rem; font-weight: 600; border-radius: 8px; }
+  .btn-cancel { padding: 0.5rem 1.5rem; border-radius: 8px; }
+
+  /* Tabs */
+  .nav-tabs .nav-link { font-weight: 500; color: #495057; border-radius: 6px 6px 0 0; padding: 0.6rem 1.2rem; }
+  .nav-tabs .nav-link.active { font-weight: 700; color: #0d6efd; background: #fff; border-bottom-color: #fff; }
+
+  /* Tables */
+  .admin-table { font-size: 0.82rem; }
+  .admin-table thead th { position: sticky; top: 0; z-index: 1; background: #e9ecef; border-bottom: 2px solid #dee2e6; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.04em; color: #495057; padding: 0.6rem 0.5rem; }
+  .admin-table tbody td { padding: 0.5rem; vertical-align: middle; }
+  .admin-table tbody tr { transition: background 0.1s; }
+  .admin-table tbody tr:hover { background: #e8f4ff !important; }
+
+  /* Recon bar */
+  .recon-bar-wrap { margin-bottom: 1.25rem; }
+  .recon-bar-label { font-size: 0.75rem; color: #6c757d; margin-bottom: 2px; }
+  .recon-bar-track { height: 10px; border-radius: 5px; background: #e9ecef; overflow: hidden; }
+  .recon-bar-fill { height: 100%; border-radius: 5px; transition: width 0.4s; }
+
+  /* Upload card */
+  .upload-card { border: 2px dashed #dee2e6; border-radius: 12px; padding: 2rem; background: #fafbfc; transition: border-color 0.2s; }
+  .upload-card:hover { border-color: #0d6efd; }
+
+  /* Section heading */
+  .section-title { font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+  .section-title i { font-size: 1.2rem; }
+
+  /* Tooltip style */
+  [data-bs-toggle="tooltip"] { cursor: help; border-bottom: 1px dotted #6c757d; }
+</style>
+
+<h4 class="mb-4"><i class="bi bi-gear me-2"></i>Admin</h4>
+
+{# ════════════════════════════════════════════════════════════════════════════
+   COMBINED UPLOAD — shared by Auto Tag & Spec Position Check
+   ════════════════════════════════════════════════════════════════════════════ #}
+<div class="admin-section">
+  <div class="upload-card">
+    {# ── Shared file upload ── #}
+    <div class="row g-3 mb-3">
+      <div class="col-md-5">
+        <label class="form-label small fw-semibold mb-1">Excel file <span class="text-muted fw-normal">(sugarm2m*.xlsm)</span></label>
+        <input type="file" id="sharedXlsx" accept=".xlsm,.xlsx" class="form-control">
+        {% if cached_xlsx_name %}
+          <div class="small mt-1"><i class="bi bi-check-circle-fill text-success me-1"></i><strong>{{ cached_xlsx_name }}</strong> <span class="text-muted">— will reuse unless you pick a new file</span></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="row g-4">
+      {# ── Auto Tag dates + button ── #}
+      <div class="col-md-6">
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.auto_tag_preview') }}" class="autoTagSpecForm">
+          <input type="file" name="xlsx" class="d-none linkedXlsx" {{ '' if cached_xlsx_name else 'required' }}>
+          <div class="row g-2 align-items-end">
+            <div class="col">
+              <label class="form-label small fw-semibold mb-1">Start date</label>
+              <input type="date" name="start_date" value="{{ auto_tag_default_start }}" class="form-control" required>
+            </div>
+            <div class="col">
+              <label class="form-label small fw-semibold mb-1">End date</label>
+              <input type="date" name="end_date" value="{{ auto_tag_default_end }}" class="form-control" required>
+            </div>
+            <div class="col-auto d-grid">
+              <button type="submit" class="btn btn-primary"><i class="bi bi-tags-fill me-1"></i>Auto Tag</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {# ── Spec Check dates + button ── #}
+      <div class="col-md-6">
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.spec_check_preview') }}" class="autoTagSpecForm">
+          <input type="file" name="xlsx" class="d-none linkedXlsx" {{ '' if cached_xlsx_name else 'required' }}>
+          <div class="row g-2 align-items-end">
+            <div class="col">
+              <label class="form-label small fw-semibold mb-1">Start date</label>
+              <input type="date" name="start_date" value="{{ spec_check_default_start }}" class="form-control" required>
+            </div>
+            <div class="col">
+              <label class="form-label small fw-semibold mb-1">End date</label>
+              <input type="date" name="end_date" value="{{ auto_tag_default_end }}" class="form-control" required>
+            </div>
+            <div class="col-auto d-grid">
+              <button type="submit" class="btn btn-danger text-white"><i class="bi bi-clipboard-check-fill me-1"></i>Spec Check</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="text-muted small mt-3">
+      Upload the sugarm2m Excel file once — then choose <strong>Auto Tag</strong> or <strong>Spec Check</strong> with independent date ranges.
+    </div>
+  </div>
+
+  {# ── JS: mirror shared file picker into both hidden file inputs ── #}
+  <script>
+    document.getElementById('sharedXlsx').addEventListener('change', function() {
+      document.querySelectorAll('.linkedXlsx').forEach(function(hidden) {
+        hidden.files = document.getElementById('sharedXlsx').files;
+      });
+    });
+  </script>
+</div>
+
+{# ════════════════════════════════════════════════════════════════════════════
+   AUTO TAG SECTION
+   ════════════════════════════════════════════════════════════════════════════ #}
+<div class="admin-section">
+  <div class="section-title text-primary">
+    <i class="bi bi-tags-fill"></i> Auto Tag Trades
+  </div>
+
+  {% if not auto_tag_preview %}
+    <div class="text-muted small">Upload a file above and click <strong>Auto Tag</strong> to preview.</div>
+  {% else %}
+    {# ── Preview state ─────────────────────────────────────────────────────── #}
+    {% set s = auto_tag_preview.summary %}
+    {% set total_push = s.path1_rows + s.path2_rows + s.path3_rows %}
+
+    {# 1. Hero status bar #}
+    {% if s.unmatched_excel == 0 and s.unmatched_sf == 0 %}
+      <div class="hero-status hero-success">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>All {{ s.matched }} trades matched perfectly &mdash; no discrepancies.</div>
+      </div>
+    {% else %}
+      <div class="hero-status hero-warning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>
+          {{ s.matched }} matched &mdash;
+          {{ s.unmatched_excel }} unmatched in Excel,
+          {{ s.unmatched_sf }} unmatched in SF.
+          <span class="fw-normal">Review details below before pushing.</span>
+        </div>
+      </div>
+    {% endif %}
+
+    {# 2. File info bar #}
+    <div class="d-flex flex-wrap align-items-center gap-3 mb-3 small text-muted">
+      <span><i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ auto_tag_preview.filename or '—' }}</span>
+      <span><i class="bi bi-calendar-range me-1"></i>{{ auto_tag_preview.start_date }} &rarr; {{ auto_tag_preview.end_date }}</span>
+    </div>
+
+    {# 3. KPI metric cards #}
+    <div class="kpi-row">
+      <div class="kpi-card kpi-success">
+        <div class="kpi-label">Matched</div>
+        <div class="kpi-value">{{ "{:,}".format(s.matched) }}</div>
+      </div>
+      <div class="kpi-card {% if s.unmatched_excel > 0 %}kpi-warning{% else %}kpi-success{% endif %}">
+        <div class="kpi-label">Unmatched Excel</div>
+        <div class="kpi-value">{{ "{:,}".format(s.unmatched_excel) }}</div>
+      </div>
+      <div class="kpi-card {% if s.unmatched_sf > 0 %}kpi-warning{% else %}kpi-success{% endif %}">
+        <div class="kpi-label">Unmatched SF</div>
+        <div class="kpi-value">{{ "{:,}".format(s.unmatched_sf) }}</div>
+      </div>
+      <div class="kpi-card kpi-info">
+        <div class="kpi-label" data-bs-toggle="tooltip" title="Path 1 (single-side) + Path 2 (long+short split) + Path 3 (manual/commission split)">To Push</div>
+        <div class="kpi-value">{{ "{:,}".format(total_push) }}</div>
+      </div>
+      {% if s.path3_creates > 0 %}
+      <div class="kpi-card kpi-neutral">
+        <div class="kpi-label" data-bs-toggle="tooltip" title="New sibling / internal-transfer records to be created on Salesforce (Path 3)">New Records</div>
+        <div class="kpi-value">{{ "{:,}".format(s.path3_creates) }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# 4. Action buttons — prominent #}
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <form method="POST" action="{{ url_for('admin.auto_tag_confirm') }}"
+            onsubmit="return confirm('Push to Salesforce?\n\nThis will update/create {{ total_push }} record(s) including {{ s.path3_creates }} new sibling records.\n\nContinue?');">
+        <button type="submit" class="btn btn-success btn-push"><i class="bi bi-cloud-upload me-2"></i>Push to Salesforce</button>
+      </form>
+      <form method="POST" action="{{ url_for('admin.auto_tag_cancel') }}">
+        <button type="submit" class="btn btn-outline-secondary btn-cancel">Cancel</button>
+      </form>
+      <div class="text-muted small ms-2">
+        Path 1: {{ "{:,}".format(s.path1_rows) }} &middot; Path 2: {{ "{:,}".format(s.path2_rows) }} &middot; Path 3: {{ "{:,}".format(s.path3_rows) }}
+      </div>
+    </div>
+
+    {# 7. Detail tabs #}
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabByBook" type="button">
+          <i class="bi bi-book me-1"></i>By Book <span class="badge bg-secondary ms-1">{{ auto_tag_preview.unmatched_excel_by_book|length }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabUnmatchedXl" type="button">
+          <i class="bi bi-file-earmark-x me-1"></i>Unmatched Excel <span class="badge bg-warning text-dark ms-1">{{ auto_tag_preview.unmatched_excel|length }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabUnmatchedSf" type="button">
+          <i class="bi bi-cloud-slash me-1"></i>Unmatched SF <span class="badge bg-warning text-dark ms-1">{{ auto_tag_preview.unmatched_sf|length }}</span>
+        </button>
+      </li>
+    </ul>
+    <div class="tab-content border border-top-0 rounded-bottom" style="max-height: 420px; overflow:auto;">
+      {# ── By Book tab ── #}
+      <div class="tab-pane fade show active p-3" id="tabByBook">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="small fw-bold text-muted text-uppercase mb-2">Unmatched Excel by Book</div>
+            {% if auto_tag_preview.unmatched_excel_by_book %}
+              <table class="table admin-table table-striped table-hover mb-0">
+                <thead><tr>
+                  <th>Book</th><th class="text-end">Rows</th>
+                  <th class="text-end" data-bs-toggle="tooltip" title="Sum of Long column">Net Long</th>
+                  <th class="text-end" data-bs-toggle="tooltip" title="Sum of Short column">Net Short</th>
+                  <th class="text-end">Net Qty</th>
+                </tr></thead>
+                <tbody>
+                  {% for r in auto_tag_preview.unmatched_excel_by_book %}
+                  <tr>
+                    <td class="fw-semibold">{{ r.book }}</td>
+                    <td class="text-end">{{ "{:,}".format(r.rows) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(r.net_long) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(r.net_short) }}</td>
+                    <td class="text-end fw-bold {% if r.net_qty < 0 %}text-danger{% elif r.net_qty > 0 %}text-success{% else %}text-muted{% endif %}">{{ "{:,.1f}".format(r.net_qty) }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% set total_rows = auto_tag_preview.unmatched_excel_by_book|sum(attribute='rows') %}
+                  {% set total_long = auto_tag_preview.unmatched_excel_by_book|sum(attribute='net_long') %}
+                  {% set total_short = auto_tag_preview.unmatched_excel_by_book|sum(attribute='net_short') %}
+                  {% set total_qty = auto_tag_preview.unmatched_excel_by_book|sum(attribute='net_qty') %}
+                  <tr class="table-dark fw-bold">
+                    <td>Total</td>
+                    <td class="text-end">{{ "{:,}".format(total_rows) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(total_long) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(total_short) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(total_qty) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            {% else %}
+              <div class="text-muted p-3"><i class="bi bi-check-circle me-1"></i>No unmatched Excel rows.</div>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <div class="small fw-bold text-muted text-uppercase mb-2">Unmatched Salesforce by Book</div>
+            {% if auto_tag_preview.unmatched_sf_by_book %}
+              <table class="table admin-table table-striped table-hover mb-0">
+                <thead><tr>
+                  <th>Book</th><th class="text-end">Rows</th>
+                  <th class="text-end">Net Long</th><th class="text-end">Net Short</th>
+                  <th class="text-end">Net Qty</th>
+                </tr></thead>
+                <tbody>
+                  {% for r in auto_tag_preview.unmatched_sf_by_book %}
+                  <tr>
+                    <td class="fw-semibold">{{ r.book }}</td>
+                    <td class="text-end">{{ "{:,}".format(r.rows) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(r.net_long) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(r.net_short) }}</td>
+                    <td class="text-end fw-bold {% if r.net_qty < 0 %}text-danger{% elif r.net_qty > 0 %}text-success{% else %}text-muted{% endif %}">{{ "{:,.1f}".format(r.net_qty) }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% set total_rows_sf = auto_tag_preview.unmatched_sf_by_book|sum(attribute='rows') %}
+                  {% set total_long_sf = auto_tag_preview.unmatched_sf_by_book|sum(attribute='net_long') %}
+                  {% set total_short_sf = auto_tag_preview.unmatched_sf_by_book|sum(attribute='net_short') %}
+                  {% set total_qty_sf = auto_tag_preview.unmatched_sf_by_book|sum(attribute='net_qty') %}
+                  <tr class="table-dark fw-bold">
+                    <td>Total</td>
+                    <td class="text-end">{{ "{:,}".format(total_rows_sf) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(total_long_sf) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(total_short_sf) }}</td>
+                    <td class="text-end">{{ "{:,.1f}".format(total_qty_sf) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            {% else %}
+              <div class="text-muted p-3"><i class="bi bi-check-circle me-1"></i>No unmatched Salesforce rows.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# ── Unmatched Excel tab ── #}
+      <div class="tab-pane fade p-3" id="tabUnmatchedXl">
+        {% if auto_tag_preview.unmatched_excel %}
+          <table class="table admin-table table-striped table-hover mb-0">
+            <thead><tr>
+              <th>Trade Date</th><th>Account</th><th>Book</th><th>Contract</th>
+              <th class="text-end">Long</th><th class="text-end">Short</th>
+              <th class="text-end">Trade Price</th><th>Instrument</th>
+              <th>Trader</th><th>Trade ID</th><th>Contract Ref</th>
+            </tr></thead>
+            <tbody>
+              {% for r in auto_tag_preview.unmatched_excel %}
+              <tr>
+                <td>{{ r['Trade Date'] }}</td>
+                <td>{{ r['Account'] }}</td>
+                <td>{{ r['Book'] }}</td>
+                <td class="fw-semibold">{{ r['Contract'] }}</td>
+                <td class="text-end {% if r['Long'] and r['Long'] != 0 %}text-success fw-semibold{% endif %}">{{ r['Long'] }}</td>
+                <td class="text-end {% if r['Short'] and r['Short'] != 0 %}text-danger fw-semibold{% endif %}">{{ r['Short'] }}</td>
+                <td class="text-end">{{ r['Trade Price'] }}</td>
+                <td>{{ r['Instrument'] }}</td>
+                <td>{{ r['Trader'] }}</td>
+                <td>{{ r['Trade ID'] }}</td>
+                <td>{{ r['Contract Ref'] }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="text-muted p-3"><i class="bi bi-check-circle me-1"></i>No unmatched Excel rows.</div>
+        {% endif %}
+      </div>
+
+      {# ── Unmatched SF tab ── #}
+      <div class="tab-pane fade p-3" id="tabUnmatchedSf">
+        {% if auto_tag_preview.unmatched_sf %}
+          <table class="table admin-table table-striped table-hover mb-0">
+            <thead><tr>
+              <th>Trade Date</th><th>Account No</th><th>Broker</th><th>Book</th><th>Contract</th>
+              <th class="text-end">Long</th><th class="text-end">Short</th>
+              <th class="text-end">Price</th><th>Trader</th><th>Trade Key</th><th>AGP/AGS</th>
+            </tr></thead>
+            <tbody>
+              {% for r in auto_tag_preview.unmatched_sf %}
+              <tr>
+                <td>{{ r['Trade_Date__c'] }}</td>
+                <td>{{ r['Account_No__c'] }}</td>
+                <td>{{ r['Broker_Name__c'] }}</td>
+                <td>{{ r['Book__c'] }}</td>
+                <td class="fw-semibold">{{ r['Contract__c'] }}</td>
+                <td class="text-end {% if r['Long__c'] and r['Long__c'] != 0 %}text-success fw-semibold{% endif %}">{{ r['Long__c'] }}</td>
+                <td class="text-end {% if r['Short__c'] and r['Short__c'] != 0 %}text-danger fw-semibold{% endif %}">{{ r['Short__c'] }}</td>
+                <td class="text-end">{{ r['Price__c'] }}</td>
+                <td>{{ r['Trader__c'] }}</td>
+                <td>{{ r['Trade_Key__c'] }}</td>
+                <td>{{ r['AGP/AGS'] }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="text-muted p-3"><i class="bi bi-check-circle me-1"></i>No unmatched Salesforce rows.</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<hr class="my-4">
+
+{# ════════════════════════════════════════════════════════════════════════════
+   SPEC POSITION CHECK SECTION
+   ════════════════════════════════════════════════════════════════════════════ #}
+<div class="admin-section">
+  <div class="section-title text-danger">
+    <i class="bi bi-clipboard-check-fill"></i> Spec Position Check
+  </div>
+
+  {% if not spec_check_preview %}
+    <div class="text-muted small">Upload a file above and click <strong>Spec Check</strong> to run comparison.</div>
+  {% else %}
+    {# ── Results state ─────────────────────────────────────────────────────── #}
+
+    {# 1. Discrepancy count #}
+    <div class="kpi-row">
+      <div class="kpi-card {% if spec_check_preview.discrepancies|length > 0 %}kpi-danger{% else %}kpi-success{% endif %}">
+        <div class="kpi-label">Discrepancies</div>
+        <div class="kpi-value">{{ spec_check_preview.discrepancies|length }}</div>
+      </div>
+    </div>
+
+    {# 2. Action #}
+    <div class="mb-4">
+      <form method="POST" action="{{ url_for('admin.spec_check_cancel') }}" class="d-inline">
+        <button type="submit" class="btn btn-outline-secondary btn-cancel">Clear Results</button>
+      </form>
+    </div>
+
+    {# 3. Comparison table #}
+    <div style="max-height: 420px; max-width: 500px; overflow:auto;" class="border rounded">
+      <table class="table admin-table table-striped table-hover mb-0">
+        <thead><tr>
+          <th>Contract</th>
+          <th class="text-end">Excel</th>
+          <th class="text-end">Salesforce</th>
+          <th class="text-end">Difference</th>
+        </tr></thead>
+        <tbody>
+          {% for r in spec_check_preview.rows %}
+            <tr {% if r.Difference != 0 %}style="background: #fff3cd !important;"{% endif %}>
+              <td class="fw-semibold">{{ r.Contract }}</td>
+              <td class="text-end">{{ "{:,.1f}".format(r.Excel) }}</td>
+              <td class="text-end">{{ "{:,.1f}".format(r.Salesforce) }}</td>
+              <td class="text-end fw-bold {% if r.Difference < 0 %}text-danger{% elif r.Difference > 0 %}text-success{% else %}text-muted{% endif %}">
+                {% if r.Difference != 0 %}{{ "{:+,.1f}".format(r.Difference) }}{% else %}0.0{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          {% if not spec_check_preview.rows %}
+            <tr><td colspan="4" class="text-muted p-3">No contracts to compare.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+
+<hr class="my-4">
+
+{# ════════════════════════════════════════════════════════════════════════════
+   INTERNAL TRANSFER CHECK SECTION
+   ════════════════════════════════════════════════════════════════════════════ #}
+<div class="admin-section">
+  <div class="section-title" style="color: #6f42c1;">
+    <i class="bi bi-arrow-left-right"></i> Internal Transfer Check
+  </div>
+
+  {% if not it_check_preview %}
+    {# ── Upload state ──────────────────────────────────────────────────────── #}
+    <div class="upload-card">
+      <form method="POST" action="{{ url_for('admin.it_check_preview') }}">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label small fw-semibold mb-1">Start date</label>
+            <input type="date" name="start_date" value="{{ it_check_default_start }}" class="form-control" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small fw-semibold mb-1">End date</label>
+            <input type="date" name="end_date" value="{{ auto_tag_default_end }}" class="form-control" required>
+          </div>
+          <div class="col-md-5">
+            <span class="text-muted small">No file upload needed — reads directly from Salesforce.</span>
+          </div>
+          <div class="col-md-3 d-grid">
+            <button type="submit" class="btn text-white" style="background: #6f42c1;"><i class="bi bi-search me-2"></i>Run Check</button>
+          </div>
+        </div>
+        <div class="text-muted small mt-3">
+          Fetches all <strong>Internal transfer</strong> trades from Salesforce and verifies that Long + Short nets to zero for each (Date, Contract, Price) group.
+          Any imbalances indicate missing or extra internal-transfer legs.
+        </div>
+      </form>
+    </div>
+  {% else %}
+    {# ── Results state ─────────────────────────────────────────────────────── #}
+
+    {# 1. Hero status bar #}
+    {% if it_check_preview.all_balanced %}
+      <div class="hero-status hero-success">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>All internal transfer trades net to zero &mdash; no imbalances detected.</div>
+      </div>
+    {% else %}
+      <div class="hero-status hero-warning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>
+          <strong>{{ it_check_preview.rows|length }}</strong> group(s) do not net to zero &mdash; review below.
+        </div>
+      </div>
+    {% endif %}
+
+    {# 2. Date range info #}
+    <div class="d-flex flex-wrap align-items-center gap-3 mb-3 small text-muted">
+      <span><i class="bi bi-calendar-range me-1"></i>{{ it_check_preview.start_date }} &rarr; {{ it_check_preview.end_date }}</span>
+    </div>
+
+    {# 3. KPI cards #}
+    <div class="kpi-row">
+      {% if it_check_preview.all_balanced %}
+      <div class="kpi-card kpi-success">
+        <div class="kpi-label">Imbalances</div>
+        <div class="kpi-value">0</div>
+      </div>
+      {% else %}
+      <div class="kpi-card kpi-danger">
+        <div class="kpi-label">Imbalances</div>
+        <div class="kpi-value">{{ it_check_preview.rows|length }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# 4. Action #}
+    <div class="mb-4">
+      <form method="POST" action="{{ url_for('admin.it_check_cancel') }}" class="d-inline">
+        <button type="submit" class="btn btn-outline-secondary btn-cancel">Clear Results</button>
+      </form>
+    </div>
+
+    {# 5. Imbalance table #}
+    {% if not it_check_preview.all_balanced %}
+    <div style="max-height: 420px; overflow:auto;" class="border rounded">
+      <table class="table admin-table table-striped table-hover mb-0">
+        <thead><tr>
+          <th>Trade Date</th>
+          <th>Contract</th>
+          <th class="text-end">Price</th>
+          <th>Strike</th>
+          <th>Put/Call</th>
+          <th class="text-end">Long</th>
+          <th class="text-end">Short</th>
+          <th class="text-end" data-bs-toggle="tooltip" title="Long + Short — should be 0 for balanced transfers">Net Qty</th>
+        </tr></thead>
+        <tbody>
+          {% for r in it_check_preview.rows %}
+          <tr style="background: #fff3cd !important;">
+            <td>{{ r.Trade_Date__c }}</td>
+            <td class="fw-semibold">{{ r.Contract__c }}</td>
+            <td class="text-end">{{ "{:,.2f}".format(r.Price__c) }}</td>
+            <td>{% if r.Strike__c is not none %}{{ r.Strike__c }}{% else %}&mdash;{% endif %}</td>
+            <td>{% if r.Put_Call_2__c %}{{ r.Put_Call_2__c }}{% else %}&mdash;{% endif %}</td>
+            <td class="text-end {% if r.Long__c != 0 %}text-success fw-semibold{% endif %}">{{ "{:,.1f}".format(r.Long__c) }}</td>
+            <td class="text-end {% if r.Short__c != 0 %}text-danger fw-semibold{% endif %}">{{ "{:,.1f}".format(r.Short__c) }}</td>
+            <td class="text-end fw-bold {% if r.quantity < 0 %}text-danger{% elif r.quantity > 0 %}text-success{% endif %}">
+              {{ "{:+,.1f}".format(r.quantity) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<hr class="my-4">
+<div class="alert alert-info small mb-4" role="alert">
+  <i class="bi bi-info-circle-fill me-2"></i>
+  <strong>Hardcoded date filters</strong> &mdash; update these when the year rolls over:
+
+  <div class="mt-2 mb-1 fw-semibold">Default start dates <span class="fw-normal text-muted">(routes/admin.py, top of file)</span></div>
+  <ul class="mb-2">
+    <li><code>AUTO_TAG_DEFAULT_START</code> &mdash; currently <strong>{{ auto_tag_default_start }}</strong></li>
+    <li><code>SPEC_CHECK_DEFAULT_START</code> &mdash; currently <strong>{{ spec_check_default_start }}</strong></li>
+    <li><code>IT_CHECK_DEFAULT_START</code> &mdash; currently <strong>{{ it_check_default_start }}</strong></li>
+  </ul>
+
+  <div class="mb-1 fw-semibold">SOQL query filters <span class="fw-normal text-muted">(services/salesforce.py, line ~57-58)</span></div>
+  <ul class="mb-2">
+    <li><code>Trade_Date__c &gt; 2025-03-31</code> &mdash; main trade date cutoff</li>
+    <li><code>Trade_Date__c &gt; 2026-02-01 OR Trader__c != null</code> &mdash; allows older trades only if Trader is tagged</li>
+  </ul>
+
+  <div class="mb-1 fw-semibold">Explicit date filters in Python</div>
+  <ul class="mb-0">
+    <li><code>services/auto_tag.py</code> line ~305 &mdash; excludes <strong>2026-01-01</strong> from unmatched SF</li>
+    <li><code>services/internal_transfer_check.py</code> line ~62 &mdash; aligns <strong>2026-01-01 &rarr; 2025-12-31</strong> (cross-year leg fix)</li>
+    <li><code>services/internal_transfer_check.py</code> line ~65 &mdash; aligns <strong>2025-03-31 &rarr; 2025-04-01</strong> (adjacent-date leg fix)</li>
+  </ul>
+</div>
+
+<script>
+  // Initialize Bootstrap tooltips
+  document.addEventListener('DOMContentLoaded', function() {
+    var tooltips = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltips.forEach(function(el) { new bootstrap.Tooltip(el); });
+  });
+</script>
+{% endblock %}
