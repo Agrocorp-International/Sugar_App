@@ -102,6 +102,16 @@ def fetch_tradestation():
         return redirect(url_for("prices.index"))
 
     if results:
+        if mode in ("sett1", "all") and sett_date is not None:
+            old_sett_date = db.session.query(db.func.max(MarketPrice.sett_date)).scalar()
+            if old_sett_date is not None and sett_date > old_sett_date:
+                db.session.execute(
+                    db.update(MarketPrice).values(
+                        settlement2=MarketPrice.settlement,
+                        delta2=MarketPrice.delta,
+                    )
+                )
+
         stmt = pg_insert(MarketPrice).values(results)
         if mode == "sett1":
             update_cols = {
