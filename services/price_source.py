@@ -73,30 +73,16 @@ def resolve_iv(mp, source=DEFAULT_SOURCE):
     return mp.iv
 
 
-def load_price_map(source=DEFAULT_SOURCE, normalise=True):
+def load_price_map(source=DEFAULT_SOURCE, normalise=True, model=None):
     """Return ``({contract_key: price}, fallback_count)``.
 
-    Loads every row from MarketPrice once and applies the source rules.
-
-    Parameters
-    ----------
-    source : str
-        ``'sett1'`` or ``'live'``.
-    normalise : bool
-        If True (default), keys are uppercased with spaces stripped
-        (e.g. ``"SBH26"``). This matches the convention used by
-        ``routes/raws.py:_load_settlement_prices``,
-        ``services/pnl_summary.py:_load_settlement_prices``, and
-        ``routes/positions.py:build_contract_key``.
-        Set to False if you need raw contract strings.
-
-    Returns
-    -------
-    (dict, int)
-        The price map and the number of contracts that fell back to
-        settlement (always 0 when source='sett1').
+    Loads every row from the given price model and applies source rules.
+    Defaults to ``MarketPrice`` (sugar); pass ``CottonMarketPrice`` for
+    cotton's parallel price table.
     """
-    rows = MarketPrice.query.all()
+    if model is None:
+        model = MarketPrice
+    rows = model.query.all()
     pm = {}
     fallbacks = 0
     for mp in rows:
@@ -113,12 +99,14 @@ def load_price_map(source=DEFAULT_SOURCE, normalise=True):
     return pm, fallbacks
 
 
-def load_delta_map(source=DEFAULT_SOURCE, normalise=True):
+def load_delta_map(source=DEFAULT_SOURCE, normalise=True, model=None):
     """Like ``load_price_map`` but for the delta field.
 
     Returns ``({contract_key: delta}, fallback_count)``.
     """
-    rows = MarketPrice.query.all()
+    if model is None:
+        model = MarketPrice
+    rows = model.query.all()
     dm = {}
     fallbacks = 0
     for mp in rows:
@@ -135,19 +123,25 @@ def load_delta_map(source=DEFAULT_SOURCE, normalise=True):
     return dm, fallbacks
 
 
-def count_fallbacks(source=DEFAULT_SOURCE):
+def count_fallbacks(source=DEFAULT_SOURCE, price_model=None, watched_model=None):
     """Return the number of *active* contracts that would fall back to sett-1
     if ``source='live'``. Always 0 when source='sett1'.
 
-    Expired contracts (``WatchedContract.expired=True``) are excluded because
+    Expired contracts (``watched_model.expired=True``) are excluded because
     they will never have live prices and the fallback is expected.
+
+    Defaults to sugar (MarketPrice + WatchedContract); pass cotton models
+    to count cotton fallbacks instead.
     """
     if source != "live":
         return 0
-    from models.db import WatchedContract
-    active = {wc.contract for wc in WatchedContract.query.filter_by(expired=False).all()}
+    if price_model is None:
+        price_model = MarketPrice
+    if watched_model is None:
+        from models.db import WatchedContract as watched_model
+    active = {wc.contract for wc in watched_model.query.filter_by(expired=False).all()}
     fallbacks = 0
-    for mp in MarketPrice.query.all():
+    for mp in price_model.query.all():
         if mp.contract in active and mp.live_price is None and mp.settlement is not None:
             fallbacks += 1
     return fallbacks

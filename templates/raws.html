@@ -81,6 +81,20 @@
   .editable-cell:hover { background-color: #e8f4ff !important; }
   .editable-cell:hover::after { content: " \270F"; font-size: 0.75em; opacity: 0.6; }
 
+  tr.hl-yellow > td { background-color: #fff3b0 !important; }
+  tr.hl-green  > td { background-color: #c7e9c0 !important; }
+  tr.hl-red    > td { background-color: #f5b7b1 !important; }
+  tr.hl-blue   > td { background-color: #c6dbef !important; }
+
+  .hl-menu { position: fixed; z-index: 2000; background: #fff;
+             border: 1px solid #ccc; border-radius: 6px; padding: 4px 6px;
+             box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: none; }
+  .hl-menu .swatch { display: inline-block; width: 22px; height: 22px;
+                     margin: 2px; border: 1px solid #888; border-radius: 4px;
+                     cursor: pointer; vertical-align: middle; }
+  .hl-menu .clear { display: inline-block; padding: 2px 8px; cursor: pointer;
+                    font-size: 12px; margin-left: 4px; vertical-align: middle; }
+  .hl-menu .clear:hover { background: #eee; border-radius: 4px; }
 </style>
 
 <h4 class="mb-3">PHYS Trades</h4>
@@ -226,7 +240,7 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr data-id="{{ row['_deal_id'] }}">
+        <tr data-id="{{ row['_deal_id'] }}"{% if row.get('_highlight') %} class="hl-{{ row['_highlight'] }}"{% endif %}>
           <td class="text-muted"><input type="checkbox" class="row-check raws-check" value="{{ row['_deal_id'] }}"></td>
           {% for col in columns %}
           {% set is_editable = col not in calculated_cols %}
@@ -385,7 +399,7 @@
       </thead>
       <tbody>
         {% for row in whites_rows %}
-        <tr data-id="{{ row['_deal_id'] }}">
+        <tr data-id="{{ row['_deal_id'] }}"{% if row.get('_highlight') %} class="hl-{{ row['_highlight'] }}"{% endif %}>
           <td class="text-muted"><input type="checkbox" class="row-check whites-check" value="{{ row['_deal_id'] }}"></td>
           {% for col in whites_columns %}
           {% set is_editable = col not in whites_calculated_cols %}
@@ -435,6 +449,14 @@
 </div>
 
 </div>{# end tab-content #}
+
+<div id="hl-menu" class="hl-menu">
+  <span class="swatch" data-color="yellow" style="background:#fff3b0" title="Yellow"></span>
+  <span class="swatch" data-color="green"  style="background:#c7e9c0" title="Green"></span>
+  <span class="swatch" data-color="red"    style="background:#f5b7b1" title="Red"></span>
+  <span class="swatch" data-color="blue"   style="background:#c6dbef" title="Blue"></span>
+  <span class="clear" data-color="">Clear</span>
+</div>
 
 <script>
 // Manual tab switching with URL hash persistence
@@ -676,7 +698,7 @@ function normalizeContract(v) {
   return v.toUpperCase();
 }
 const DIRTY_COLOR = "#fff8d6";
-const UPDATE_URL = "/raws/api/update";
+const UPDATE_URL = "{{ url_for('raws.api_update') }}";
 let editingCell = null;
 const pendingChanges = {};
 
@@ -841,7 +863,7 @@ document.querySelectorAll(".whites-check").forEach(cb => {
 
 // ── Add / Delete / Upload / Seed ────────────────────────────────────
 function addDeal(book) {
-  fetch("/raws/api/add", {
+  fetch("{{ url_for('raws.api_add') }}", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({book})
@@ -849,7 +871,7 @@ function addDeal(book) {
   .then(r => r.json())
   .then(result => {
     if (result.ok) {
-      location.href = `/raws?edit_id=${result.id}` + (book === "Whites" ? "#pane-whites" : "#pane-raws");
+      location.href = `{{ url_for('raws.index') }}?edit_id=${result.id}` + (book === "Whites" ? "#pane-whites" : "#pane-raws");
     } else {
       alert("Add failed: " + (result.error || "Unknown error"));
     }
@@ -865,7 +887,7 @@ function deleteSelected(book) {
     if (!confirm("You have unsaved edits that will be lost. Continue?")) return;
   }
   if (!confirm(`Delete ${ids.length} deal(s)? This cannot be undone.`)) return;
-  fetch("/raws/api/delete", {
+  fetch("{{ url_for('raws.api_delete') }}", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ids})
@@ -880,7 +902,7 @@ function deleteSelected(book) {
 
 function seedFromDisk() {
   if (!confirm("This will replace ALL Raws and Whites deals from sugarm2m.xlsm on disk. Continue?")) return;
-  fetch("/raws/api/seed", {method: "POST"})
+  fetch("{{ url_for('raws.api_seed') }}", {method: "POST"})
   .then(r => r.json())
   .then(result => {
     if (result.ok) {
@@ -902,7 +924,7 @@ function uploadExcel(input) {
   }
   const form = new FormData();
   form.append("file", file);
-  fetch("/raws/api/upload", {method: "POST", body: form})
+  fetch("{{ url_for('raws.api_upload') }}", {method: "POST", body: form})
   .then(r => r.json())
   .then(result => {
     if (result.ok) {
@@ -916,6 +938,52 @@ function uploadExcel(input) {
   .catch(() => { alert("Network error."); input.value = ""; });
 }
 
+// ---- Row highlight (right-click) ----
+(function() {
+  const HL_URL = "{{ url_for('raws.api_highlight') }}";
+  const menu = document.getElementById("hl-menu");
+  if (!menu) return;
+  let targetId = null;
+
+  document.querySelectorAll(".raws-table tbody tr").forEach(tr => {
+    if (!tr.dataset.id) return;
+    tr.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      targetId = tr.dataset.id;
+      menu.style.display = "block";
+      const r = menu.getBoundingClientRect();
+      const x = Math.min(e.clientX, window.innerWidth  - r.width  - 4);
+      const y = Math.min(e.clientY, window.innerHeight - r.height - 4);
+      menu.style.left = Math.max(0, x) + "px";
+      menu.style.top  = Math.max(0, y) + "px";
+    });
+  });
+
+  document.addEventListener("click", e => {
+    if (!menu.contains(e.target)) menu.style.display = "none";
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") menu.style.display = "none";
+  });
+
+  menu.querySelectorAll("[data-color]").forEach(el => {
+    el.addEventListener("click", async () => {
+      const color = el.dataset.color || null;
+      menu.style.display = "none";
+      if (!targetId) return;
+      const resp = await fetch(HL_URL, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({record_id: Number(targetId), color})
+      });
+      if (!resp.ok) { alert("Highlight failed."); return; }
+      document.querySelectorAll(`tr[data-id="${targetId}"]`).forEach(tr => {
+        tr.classList.remove("hl-yellow","hl-green","hl-red","hl-blue");
+        if (color) tr.classList.add("hl-" + color);
+      });
+    });
+  });
+})();
 </script>
 
 <!-- Raws Column Guide Modal -->

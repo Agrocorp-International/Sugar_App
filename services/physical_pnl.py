@@ -1,13 +1,13 @@
 """
 Shared Physical/Futures PNL and Exposure computation for the dashboard summary.
-Loads all DB data once and reads the Excel file once for both Raws and Whites sheets.
+Reads physical deal rows from the PhysicalDeal DB table (same source as /raws).
 """
-import openpyxl
+from models.db import PhysicalDeal
 from routes.raws import (
     _futures_pricing, _hedged, _purchase_status, _sales_status,
     _long_physical_pol, _short_physical_pol,
     _load_trade_maps, _load_settlement_prices, _load_futures_pnl_map,
-    _load_whites_spread_maps, EXCEL_PATH,
+    _load_whites_spread_maps,
 )
 
 
@@ -42,17 +42,10 @@ def compute_all_pnl_totals(source='sett1'):
     whites_exposure = None
 
     try:
-        wb = openpyxl.load_workbook(EXCEL_PATH, read_only=True, data_only=True)
         try:
-            # --- Raws sheet ---
-            ws = wb["Raws"]
-            it = ws.iter_rows(values_only=True)
-            next(it)  # group header
-            raw_headers = [str(h) if h is not None else f"col_{i}" for i, h in enumerate(next(it))]
-            for row in it:
-                if all(v is None for v in row):
-                    continue
-                d = dict(zip(raw_headers, row))
+            # --- Raws rows (from DB) ---
+            for deal in PhysicalDeal.query.filter_by(book="Raws").order_by(PhysicalDeal.row_index).all():
+                d = deal.data or {}
                 if d.get("Shipment Period") is None:
                     continue
 
@@ -175,15 +168,9 @@ def compute_all_pnl_totals(source='sett1'):
 
                 raws_exposure = (raws_exposure or 0) + pe + se + pol_exp + od_val
 
-            # --- Whites sheet ---
-            ws = wb["Whites"]
-            it = ws.iter_rows(values_only=True)
-            next(it)  # group header
-            headers = [str(h) if h is not None else f"col_{i}" for i, h in enumerate(next(it))]
-            for row in it:
-                if all(v is None for v in row):
-                    continue
-                d = dict(zip(headers, row))
+            # --- Whites rows (from DB) ---
+            for deal in PhysicalDeal.query.filter_by(book="Whites").order_by(PhysicalDeal.row_index).all():
+                d = deal.data or {}
                 if d.get("Shipment Month") is None:
                     continue
 
@@ -287,7 +274,7 @@ def compute_all_pnl_totals(source='sett1'):
                 whites_exposure = (whites_exposure or 0) + pe_w + se_w
 
         finally:
-            wb.close()
+            pass
     except Exception:
         pass
 

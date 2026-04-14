@@ -234,7 +234,13 @@
 
 {% if pnl_summary and pnl_summary.total_pnl is not none %}
 <div class="dash-hero card mb-3 p-4">
-  <div class="dash-hero-label">Total PNL</div>
+  <div class="dash-hero-label">
+    Total PNL
+    <button type="button" id="hidePnlBtn" class="btn btn-link p-0 ms-2" title="Hide / show PNL"
+            style="text-decoration:none; vertical-align:middle; font-size:1.6rem; line-height:1;">
+      <i id="hidePnlIcon" class="bi bi-eye-slash"></i>
+    </button>
+  </div>
   <div class="dash-hero-value {% if pnl_summary.total_pnl >= 0 %}dash-pos{% else %}dash-neg{% endif %}">
     {% if pnl_summary.total_pnl >= 0 %}${{ "{:,.0f}".format(pnl_summary.total_pnl) }}{% else %}-${{ "{:,.0f}".format(pnl_summary.total_pnl|abs) }}{% endif %}
   </div>
@@ -594,4 +600,39 @@
 </div>
 
 </div>
+
+<script>
+// ---- Hide / show PNL values (client-side, persisted in localStorage) ----
+(function() {
+  const KEY = "dash_hide_pnl";
+  const SELECTOR = ".dash-hero .dash-hero-value, .dash-hero .dash-delta-value";
+  const btn  = document.getElementById("hidePnlBtn");
+  const icon = document.getElementById("hidePnlIcon");
+  if (!btn) return;
+
+  function apply(hide) {
+    document.querySelectorAll(SELECTOR).forEach(el => {
+      if (hide) {
+        if (el.dataset.origHtml === undefined) el.dataset.origHtml = el.innerHTML;
+        el.innerHTML = "***";
+      } else if (el.dataset.origHtml !== undefined) {
+        el.innerHTML = el.dataset.origHtml;
+        delete el.dataset.origHtml;
+      }
+    });
+    icon.className = hide ? "bi bi-eye" : "bi bi-eye-slash";
+    btn.title = hide ? "Show PNL" : "Hide PNL";
+  }
+
+  let hidden = localStorage.getItem(KEY) === "1";
+  apply(hidden);
+
+  btn.addEventListener("click", () => {
+    hidden = !hidden;
+    localStorage.setItem(KEY, hidden ? "1" : "0");
+    apply(hidden);
+  });
+})();
+</script>
+
 {% endblock %}

@@ -557,6 +557,7 @@ def index():
             d = deal.data
             row_data = {col: d.get(col) for col in INPUT_COLS}
             row_data["_deal_id"] = deal.id
+            row_data["_highlight"] = d.get("_highlight")
             # Inject calculated columns
             purchase_contract_norm = str(d.get("Purchase Contract") or "").replace(' ', '').upper()
             sales_contract_norm = str(d.get("Sales Contract") or "").replace(' ', '').upper()
@@ -769,6 +770,7 @@ def index():
             d = deal_w.data
             row_w = {col: d.get(col) for col in WHITES_INPUT_COLS if col in d}
             row_w["_deal_id"] = deal_w.id
+            row_w["_highlight"] = d.get("_highlight")
             pc = str(d.get("Purchase Contract") or "")
             sc = str(d.get("Sales Contract") or "")
             row_w["Purchase Settlement"] = settlement_prices.get(pc.replace(' ', '').upper()) if pc else None
@@ -1042,3 +1044,30 @@ def api_delete():
     deleted = PhysicalDeal.query.filter(PhysicalDeal.id.in_(ids)).delete(synchronize_session=False)
     db.session.commit()
     return jsonify({"ok": True, "deleted": deleted})
+
+
+@raws_bp.route("/raws/api/highlight", methods=["POST"])
+def api_highlight():
+    """Set or clear the row highlight color on a PhysicalDeal.
+
+    Stored inside ``data["_highlight"]`` (shared, not per-user).
+    Wiped on Excel reseed/upload since those rebuild ``data`` from the sheet.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+    body = request.get_json() or {}
+    record_id = body.get("record_id")
+    color = body.get("color")
+    if color not in (None, "", "yellow", "green", "red", "blue"):
+        return jsonify({"error": "invalid color"}), 400
+    deal = db.session.get(PhysicalDeal, record_id)
+    if not deal:
+        return jsonify({"error": "not found"}), 404
+    new_data = dict(deal.data or {})
+    if not color:
+        new_data.pop("_highlight", None)
+    else:
+        new_data["_highlight"] = color
+    deal.data = new_data
+    flag_modified(deal, "data")
+    db.session.commit()
+    return jsonify({"ok": True})

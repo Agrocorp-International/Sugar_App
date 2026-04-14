@@ -36,7 +36,7 @@ def run_sync():
             return redirect(url_for("dashboard.index"))
 
         # Fetch records from Salesforce
-        records = fetch_trade_records(sf, trade_object)
+        records = fetch_trade_records(sf, trade_object, commodity_names=['ICE Raw Sugar', 'LDN Sugar #5'])
 
         # Clear all existing trades before inserting fresh data
         TradePosition.query.delete()

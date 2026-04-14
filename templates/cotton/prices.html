@@ -1,12 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Market Prices - Sugar Trading{% endblock %}
+{% block title %}Market Prices - Cotton Trading{% endblock %}
 
 {% block content %}
 {% set active_contracts = watched | rejectattr('expired') | list %}
 {% set expired_contracts = watched | selectattr('expired') | list %}
 
+<div class="alert alert-info py-2 mb-3" role="alert">
+  <i class="bi bi-info-circle me-1"></i>
+  <small>Auto-expiry is not yet enabled for cotton — archive expired contracts manually using the Expired toggle.</small>
+</div>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0">Market Prices
+  <h4 class="mb-0">Cotton Market Prices
     {% if pricing_date %}<span class="text-muted ms-2">({{ pricing_date.strftime('%d %b %Y') }})</span>{% endif %}
     {% if watched %}<span class="badge bg-secondary ms-2 fs-6">{{ watched|length }}</span>{% endif %}
   </h4>
@@ -18,7 +23,7 @@
   <div class="flex-grow-1">
     <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
       <strong>{{ missing_prices|length }} contract{{ 's' if missing_prices|length != 1 }} in FUTS Trades with no price loaded:</strong>
-      <form action="{{ url_for('prices.contracts_bulk_add') }}" method="POST">
+      <form action="{{ url_for('cotton_prices.contracts_bulk_add') }}" method="POST">
         <input type="hidden" name="contracts" value="{{ missing_prices | join(',') }}">
         <button type="submit" class="btn btn-secondary btn-sm">
           <i class="bi bi-plus me-1"></i>Add All to Watchlist
@@ -36,19 +41,19 @@
 
 
 <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
-  <form action="{{ url_for('prices.fetch_tradestation') }}" method="POST">
+  <form action="{{ url_for('cotton_prices.fetch_tradestation') }}" method="POST">
     <input type="hidden" name="mode" value="sett1">
     <button type="submit" class="btn btn-primary btn-sm">
       <i class="bi bi-cloud-download me-1"></i>Fetch Sett-1
     </button>
   </form>
-  <form action="{{ url_for('prices.fetch_tradestation') }}" method="POST">
+  <form action="{{ url_for('cotton_prices.fetch_tradestation') }}" method="POST">
     <input type="hidden" name="mode" value="live">
     <button type="submit" class="btn btn-success btn-sm">
       <i class="bi bi-activity me-1"></i>Fetch Live
     </button>
   </form>
-  <form action="{{ url_for('prices.fetch_tradestation') }}" method="POST">
+  <form action="{{ url_for('cotton_prices.fetch_tradestation') }}" method="POST">
     <input type="hidden" name="mode" value="all">
     <button type="submit" class="btn btn-outline-primary btn-sm">
       <i class="bi bi-arrow-repeat me-1"></i>Fetch All
@@ -56,9 +61,9 @@
   </form>
   <div class="vr"></div>
 
-  <form action="{{ url_for('prices.contracts_add') }}" method="POST" class="d-flex align-items-center gap-2">
+  <form action="{{ url_for('cotton_prices.contracts_add') }}" method="POST" class="d-flex align-items-center gap-2">
     <input type="text" name="contract" class="form-control form-control-sm" style="max-width: 160px;"
-           placeholder="e.g. SBH27" required autocomplete="off">
+           placeholder="e.g. CTH26" required autocomplete="off">
     <button type="submit" class="btn btn-primary btn-sm">
       <i class="bi bi-plus me-1"></i>Add
     </button>
@@ -67,14 +72,14 @@
           data-bs-toggle="collapse" data-bs-target="#bulkAddCollapse">
     <i class="bi bi-list-ul me-1"></i>Bulk Add
   </button>
-  <form action="{{ url_for('prices.archive') }}" method="POST"
+  <form action="{{ url_for('cotton_prices.archive') }}" method="POST"
         onsubmit="return confirm('Copy Sett-1 and Delta-1 into Sett-2 and Delta-2? Do this before refreshing prices.')">
     <button type="submit" class="btn btn-outline-danger btn-sm">
       <i class="bi bi-arrow-left-right me-1"></i>Archive Sett-1 → Sett-2
     </button>
   </form>
   {% if price_map %}
-  <form action="{{ url_for('prices.clear') }}" method="POST"
+  <form action="{{ url_for('cotton_prices.clear') }}" method="POST"
         onsubmit="return confirm('Clear all stored prices?')">
     <button type="submit" class="btn btn-outline-danger btn-sm">
       <i class="bi bi-trash me-1"></i>Clear All
@@ -85,10 +90,10 @@
 
 <div class="collapse mb-4" id="bulkAddCollapse">
   <div class="card card-body py-2" style="max-width: 400px;">
-    <form action="{{ url_for('prices.contracts_bulk_add') }}" method="POST">
+    <form action="{{ url_for('cotton_prices.contracts_bulk_add') }}" method="POST">
       <label class="form-label small fw-semibold">Paste contracts (comma or line separated)</label>
       <textarea name="contracts" class="form-control form-control-sm mb-2" rows="4"
-                placeholder="SBH27, SBK27&#10;SBN27&#10;SBV27C1800" required></textarea>
+                placeholder="CTH26, CTK26&#10;CTN26&#10;CTV26C8000" required></textarea>
       <button type="submit" class="btn btn-primary btn-sm">
         <i class="bi bi-plus me-1"></i>Add All
       </button>
@@ -165,7 +170,7 @@
             {% if exp %}{{ exp.strftime('%d %b %Y') }}{% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td>
-            <form class="delete-form" action="{{ url_for('prices.contracts_delete', id=wc.id) }}" method="POST">
+            <form class="delete-form" action="{{ url_for('cotton_prices.contracts_delete', id=wc.id) }}" method="POST">
               <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">
                 <i class="bi bi-trash"></i>
               </button>
@@ -230,7 +235,7 @@
             {% if exp %}{{ exp.strftime('%d %b %Y') }}{% else %}—{% endif %}
           </td>
           <td>
-            <form class="delete-form" action="{{ url_for('prices.contracts_delete', id=wc.id) }}" method="POST">
+            <form class="delete-form" action="{{ url_for('cotton_prices.contracts_delete', id=wc.id) }}" method="POST">
               <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">
                 <i class="bi bi-trash"></i>
               </button>
@@ -268,7 +273,7 @@
       handle: '.drag-handle',
       onEnd() {
         const ids = [...tbody.querySelectorAll('tr')].map(tr => Number(tr.dataset.id));
-        fetch('{{ url_for("prices.contracts_reorder") }}', {
+        fetch('{{ url_for("cotton_prices.contracts_reorder") }}', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ids})
@@ -297,7 +302,7 @@
         const id = td.dataset.id;
         const field = td.dataset.field;
         const val = input.value.trim() === '' ? null : parseFloat(input.value);
-        fetch('{{ url_for("prices.contracts_update_sett2", id=0) }}'.slice(0, -1) + id, {
+        fetch('{{ url_for("cotton_prices.contracts_update_sett2", id=0) }}'.slice(0, -1) + id, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({[field]: val})

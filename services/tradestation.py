@@ -36,23 +36,29 @@ BASE_URL = "https://api.tradestation.com/v3/marketdata"
 _EXCHANGE_TZ = ZoneInfo("America/New_York")
 _SGT = ZoneInfo("Asia/Singapore")
 
-_FUTURE_RE = re.compile(r'^S[BW][A-Z]\d{2}$')
-_OPTION_RE  = re.compile(r'^(S[BW][A-Z]\d{2})([CP])(\d+)$')
+_FUTURE_RE = re.compile(r'^(?:S[BW]|CT)[A-Z]\d{2}$')
+_OPTION_RE  = re.compile(r'^((?:S[BW]|CT)[A-Z]\d{2})([CP])(\d+)$')
 _RISK_FREE_RATE_FALLBACK = 0.045  # fallback if SOFR fetch fails
 
 # Static mapping: internal 2-letter prefix → TradeStation root.
 # Used for both futures and options symbol conversion.
+# NOTE: CT TradeStation root is UNVERIFIED — must round-trip-test one known
+# cotton futures + option symbol before enabling cotton prices fetch.
+# If TradeStation uses a different root (e.g. "CT2"), update "CT" value below.
 _FUTURES_ROOT_MAP = {
     "SB": "SB",   # ICE Sugar No.11
     "SW": "CW",   # ICE White Sugar No.5 (TradeStation uses CW)
+    "CT": "CT",   # ICE Cotton #2 — PLACEHOLDER, verify before go-live
 }
 
 # Strike scale factor per product prefix.
 # SB: strikes stored as hundredths of c/lb  (1600 → K = 16.00)
 # SW: strikes stored as whole USD/ton        (500  → K = 500.0)
+# CT: strikes stored as hundredths of c/lb   (8000 → K = 80.00)  — same as SB
 _STRIKE_SCALE = {
     "SB": 0.01,
     "SW": 1.0,
+    "CT": 0.01,
 }
 
 
@@ -689,6 +695,7 @@ def fetch_prices(contracts):
 _EXPIRY_PROBE_STRIKES = {
     "SB": ["C1400", "C1600", "C1800", "C2000"],
     "SW": ["C450", "C500", "C550", "C600"],
+    "CT": ["C6500", "C7000", "C7500", "C8000"],  # cents/lb × 100 (65–80c range)
 }
 
 import logging

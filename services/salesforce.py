@@ -24,12 +24,18 @@ def list_custom_objects(sf):
     return sorted(custom_objects)
 
 
-def fetch_trade_records(sf, object_name):
+def _soql_quote_list(values):
+    """Safely quote a list of string values for a SOQL IN (...) clause."""
+    escaped = [str(v).replace("\\", "\\\\").replace("'", "\\'") for v in values]
+    return ", ".join(f"'{v}'" for v in escaped)
+
+
+def fetch_trade_records(sf, object_name, commodity_names):
     """
     Query filtered trade records from the given Salesforce custom object.
     Filters:
       - Account_No__c in ('08290CA', 'LSU15001')
-      - Commodity_Name__c in ('ICE Raw Sugar', 'LDN Sugar #5')
+      - Commodity_Name__c in (commodity_names)
       - Trade_Date__c > 2025-03-31
     Returns a list of dicts (one per record).
     """
@@ -53,7 +59,7 @@ def fetch_trade_records(sf, object_name):
     soql = (
         f"SELECT {', '.join(fields)} FROM {object_name} "
         f"WHERE Account_No__c IN ('08290CA', 'LSU15001') "
-        f"AND Commodity_Name__c IN ('ICE Raw Sugar', 'LDN Sugar #5') "
+        f"AND Commodity_Name__c IN ({_soql_quote_list(commodity_names)}) "
         f"AND Trade_Date__c > 2025-03-31 "
         f"AND (Trade_Date__c > 2026-02-01 OR Trader__c != null)"
     )

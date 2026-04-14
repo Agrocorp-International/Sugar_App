@@ -900,7 +900,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ── Fetch payoff grid from backend ────────────────────────────────────
     const legDetailsContainer = document.getElementById('s3-leg-details');
-    fetch('/options/payoff', {
+    fetch('{{ url_for("options.payoff") }}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reqBody),
@@ -1213,7 +1213,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const tradeIds = Array.from(document.querySelectorAll('.sim-trade-id-sel'))
         .map(s => s.value).filter(v => v);
-      const resp = await fetch('/options/sim/load-positions', {
+      const resp = await fetch('{{ url_for("options.sim_load_positions") }}', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trade_ids: tradeIds }),
@@ -1359,14 +1359,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
   /* ── Inline CRUD ─────────────────────────────────────────────────────── */
   window.simUpdateFuture = async function(id, field, val) {
-    await fetch(`/options/sim/futures/${id}`, {
+    await fetch('{{ url_for("options.sim_update_future", fid=0) }}'.slice(0, -1) + id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: parseFloat(val) }),
     });
   };
 
   window.simUpdateOption = async function(id, field, val) {
-    const resp = await fetch(`/options/sim/options/${id}`, {
+    const resp = await fetch('{{ url_for("options.sim_update_option", oid=0) }}'.slice(0, -1) + id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: parseFloat(val) }),
     });
@@ -1385,19 +1385,19 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   window.simDeleteFuture = async function(id, btn) {
-    await fetch(`/options/sim/futures/${id}`, { method: 'DELETE' });
+    await fetch('{{ url_for("options.sim_delete_future", fid=0) }}'.slice(0, -1) + id, { method: 'DELETE' });
     btn.closest('tr').remove();
     simUpdateCount();
   };
 
   window.simDeleteOption = async function(id, btn) {
-    await fetch(`/options/sim/options/${id}`, { method: 'DELETE' });
+    await fetch('{{ url_for("options.sim_delete_option", oid=0) }}'.slice(0, -1) + id, { method: 'DELETE' });
     btn.closest('tr').remove();
     simUpdateCount();
   };
 
   document.getElementById('sim-reset-limits-btn').addEventListener('click', async () => {
-    await fetch('/options/sim/reset-limits', { method: 'POST' });
+    await fetch('{{ url_for("options.sim_reset_limits") }}', { method: 'POST' });
     simLoadPositions();  // reload to reflect reset
   });
 
@@ -1489,7 +1489,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!commodityCode) throw new Error('Select a commodity');
       if (!overlayDates.length) throw new Error('Input Date must be before Latest Expiry Date');
 
-      const resp = await fetch('/options/sim/run', {
+      const resp = await fetch('{{ url_for("options.sim_run") }}', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1615,7 +1615,7 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
     try {
-      const resp = await fetch('/options/sim/theta-decay', { method: 'POST' });
+      const resp = await fetch('{{ url_for("options.sim_theta_decay") }}', { method: 'POST' });
       if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
       thetaData = await resp.json();
       simRenderTheta(thetaData);
@@ -1745,7 +1745,7 @@ document.addEventListener('DOMContentLoaded', function() {
   async function simSaveStack() {
     if (!simData) { alert('Run a simulation first'); return; }
     const label = document.getElementById('sim-stack-label').value.trim() || 'Untitled';
-    await fetch('/options/sim/stacks', {
+    await fetch('{{ url_for("options.sim_save_stack") }}', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         label, x_axis: simData.x_axis, commodity_code: simData.commodity_code, data: simData.results,
@@ -1756,7 +1756,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function simLoadStacks() {
-    const resp = await fetch('/options/sim/stacks');
+    const resp = await fetch('{{ url_for("options.sim_list_stacks") }}');
     const stacks = await resp.json();
     const list = document.getElementById('sim-stack-list');
     if (!stacks.length) {
@@ -1778,15 +1778,15 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   window.simDeleteStack = async function(id) {
-    await fetch(`/options/sim/stacks/${id}`, { method: 'DELETE' });
+    await fetch('{{ url_for("options.sim_delete_stack", sid=0) }}'.slice(0, -1) + id, { method: 'DELETE' });
     simLoadStacks();
   };
 
   async function simClearStacks() {
-    const resp = await fetch('/options/sim/stacks');
+    const resp = await fetch('{{ url_for("options.sim_list_stacks") }}');
     const stacks = await resp.json();
     for (const s of stacks) {
-      await fetch(`/options/sim/stacks/${s.id}`, { method: 'DELETE' });
+      await fetch('{{ url_for("options.sim_delete_stack", sid=0) }}'.slice(0, -1) + s.id, { method: 'DELETE' });
     }
     simLoadStacks();
   }

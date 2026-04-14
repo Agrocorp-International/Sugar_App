@@ -1,6 +1,6 @@
 from datetime import timedelta
 from urllib.parse import urlencode
-from flask import Flask, g, request
+from flask import Flask, g, request, redirect, url_for
 from config import Config
 from models.db import db
 from routes.dashboard import dashboard_bp
@@ -15,6 +15,10 @@ from routes.options import options_bp
 from routes.info import info_bp
 from routes.strategy_warnings import strategy_warnings_bp
 from routes.admin import admin_bp
+from routes.cotton_dashboard import cotton_dashboard_bp
+from routes.cotton_sync import cotton_sync_bp
+from routes.cotton_positions import cotton_positions_bp
+from routes.cotton_prices import cotton_prices_bp
 
 
 def create_app():
@@ -23,18 +27,40 @@ def create_app():
 
     db.init_app(app)
 
-    app.register_blueprint(dashboard_bp)
-    app.register_blueprint(positions_bp)
-    app.register_blueprint(sync_bp)
-    app.register_blueprint(prices_bp)
-    app.register_blueprint(summary_bp)
-    app.register_blueprint(physical_bp)
-    app.register_blueprint(ffa_bp)
-    app.register_blueprint(raws_bp)
-    app.register_blueprint(options_bp)
-    app.register_blueprint(info_bp)
-    app.register_blueprint(strategy_warnings_bp)
-    app.register_blueprint(admin_bp)
+    # Sugar section — all existing blueprints mounted under /sugar.
+    app.register_blueprint(dashboard_bp,         url_prefix="/sugar")
+    app.register_blueprint(positions_bp,         url_prefix="/sugar")
+    app.register_blueprint(sync_bp,              url_prefix="/sugar")
+    app.register_blueprint(prices_bp,            url_prefix="/sugar")
+    app.register_blueprint(summary_bp,           url_prefix="/sugar")
+    app.register_blueprint(physical_bp,          url_prefix="/sugar")
+    app.register_blueprint(ffa_bp,               url_prefix="/sugar")
+    app.register_blueprint(raws_bp,              url_prefix="/sugar")
+    app.register_blueprint(options_bp,           url_prefix="/sugar")
+    app.register_blueprint(info_bp,              url_prefix="/sugar")
+    app.register_blueprint(strategy_warnings_bp, url_prefix="/sugar")
+    app.register_blueprint(admin_bp,             url_prefix="/sugar")
+
+    # Cotton section — mounted under /cotton.
+    app.register_blueprint(cotton_dashboard_bp, url_prefix="/cotton")
+    app.register_blueprint(cotton_sync_bp,      url_prefix="/cotton")
+    app.register_blueprint(cotton_positions_bp, url_prefix="/cotton")
+    app.register_blueprint(cotton_prices_bp,    url_prefix="/cotton")
+
+    @app.route("/")
+    def root():
+        # Redirect by endpoint name (prefix-agnostic); resolves to /sugar/.
+        return redirect(url_for("dashboard.index"))
+
+    @app.before_request
+    def _set_section():
+        p = request.path
+        if p.startswith("/sugar"):
+            g.section = "sugar"
+        elif p.startswith("/cotton"):
+            g.section = "cotton"
+        else:
+            g.section = None  # root redirect, static, unknown
 
     @app.before_request
     def _set_price_source():
@@ -70,7 +96,7 @@ def create_app():
         if value[2] == ' ':
             return value
         prefix = value[:2].upper()
-        if prefix in ('SB', 'SW'):
+        if prefix in ('SB', 'SW', 'CT'):
             return value[:2] + ' ' + value[2:]
         return value
 

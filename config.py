@@ -28,3 +28,8 @@ class Config:
     SF_SECURITY_TOKEN = os.getenv("SF_SECURITY_TOKEN")
     SF_DOMAIN = os.getenv("SF_DOMAIN", "login")
     SF_TRADE_OBJECT = os.getenv("SF_TRADE_OBJECT", "")  # e.g. Trade__c
+
+    # Cotton feature flags
+    # Gate cotton → Salesforce push-back until BOOK_TO_SF mapping is confirmed.
+    # Set COTTON_SF_PUSH_ENABLED=true in .env to enable.
+    COTTON_SF_PUSH_ENABLED = os.getenv("COTTON_SF_PUSH_ENABLED", "false").lower() == "true"
