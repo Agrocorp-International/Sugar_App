@@ -15,6 +15,8 @@ from routes.options import options_bp
 from routes.info import info_bp
 from routes.strategy_warnings import strategy_warnings_bp
 from routes.admin import admin_bp
+from routes.wip import wip_bp
+from routes.notes import notes_bp
 from routes.cotton_dashboard import cotton_dashboard_bp
 from routes.cotton_sync import cotton_sync_bp
 from routes.cotton_positions import cotton_positions_bp
@@ -40,6 +42,8 @@ def create_app():
     app.register_blueprint(info_bp,              url_prefix="/sugar")
     app.register_blueprint(strategy_warnings_bp, url_prefix="/sugar")
     app.register_blueprint(admin_bp,             url_prefix="/sugar")
+    app.register_blueprint(wip_bp,               url_prefix="/sugar")
+    app.register_blueprint(notes_bp,             url_prefix="/sugar")
 
     # Cotton section — mounted under /cotton.
     app.register_blueprint(cotton_dashboard_bp, url_prefix="/cotton")
@@ -102,6 +106,15 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        # Lightweight idempotent migration: add per-mode fetch timestamp
+        # columns to sugar_market_prices if they don't already exist.
+        from sqlalchemy import text
+        db.session.execute(text(
+            "ALTER TABLE sugar_market_prices "
+            "ADD COLUMN IF NOT EXISTS sett_fetched_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS live_fetched_at TIMESTAMP"
+        ))
+        db.session.commit()
 
     return app
 

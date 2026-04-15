@@ -396,17 +396,18 @@ document.addEventListener('DOMContentLoaded', function() {
             <td style="padding:1.1rem 1.25rem;">
               {% if g.iv is not none %}{{ "%.1f"|format(g.iv * 100) }}%{% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td style="padding:1.1rem 1.25rem; {% if g.delta >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
-              {{ "{:,.0f}".format(g.delta) }}
+            {% set is_option = g.Put_Call_2__c and g.Strike__c is not none %}
+            <td style="padding:1.1rem 1.25rem; {% if is_option and g.delta >= 0 %}color:#198754{% elif is_option %}color:#dc3545{% endif %}; font-weight:500;">
+              {% if is_option %}{{ "{:,.0f}".format(g.delta) }}{% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td style="padding:1.1rem 1.25rem; {% if g.gamma >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
-              {{ "{:,.2f}".format(g.gamma) }}
+            <td style="padding:1.1rem 1.25rem; {% if is_option and g.gamma >= 0 %}color:#198754{% elif is_option %}color:#dc3545{% endif %}; font-weight:500;">
+              {% if is_option %}{{ "{:,.2f}".format(g.gamma) }}{% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td style="padding:1.1rem 1.25rem; {% if g.vega >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
-              {{ "{:,.0f}".format(g.vega) }}
+            <td style="padding:1.1rem 1.25rem; {% if is_option and g.vega >= 0 %}color:#198754{% elif is_option %}color:#dc3545{% endif %}; font-weight:500;">
+              {% if is_option %}{{ "{:,.0f}".format(g.vega) }}{% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td style="padding:1.1rem 1.25rem; {% if g.theta >= 0 %}color:#198754{% else %}color:#dc3545{% endif %}; font-weight:500;">
-              {{ "{:,.0f}".format(g.theta) }}
+            <td style="padding:1.1rem 1.25rem; {% if is_option and g.theta >= 0 %}color:#198754{% elif is_option %}color:#dc3545{% endif %}; font-weight:500;">
+              {% if is_option %}{{ "{:,.0f}".format(g.theta) }}{% else %}<span class="text-muted">—</span>{% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -1290,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <td style="${pad}"><span class="text-muted">—</span></td>
           <td style="${pad}"><span class="text-muted">—</span></td>
           <td style="${pad}"><span class="text-muted">—</span></td>
-          <td style="${pad} ${greekColor(f.net_lots)}; font-weight:500;">${fmtGreek(f.net_lots, 0)}</td>
+          <td style="${pad}"><span class="text-muted">—</span></td>
           <td style="${pad}"><span class="text-muted">—</span></td>
           <td style="${pad}"><span class="text-muted">—</span></td>
           <td style="${pad}"><span class="text-muted">—</span></td>

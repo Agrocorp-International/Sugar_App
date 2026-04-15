@@ -1,0 +1,10 @@
+<li class="wip-item{% if item.completed %} wip-done{% endif %}" data-id="{{ item.id }}">
+  <label class="wip-checkbox-wrap">
+    <input type="checkbox" class="wip-checkbox" {% if item.completed %}checked{% endif %}>
+    <span class="wip-checkbox-box"><i class="bi bi-check-lg"></i></span>
+  </label>
+  <span class="wip-text" title="Click to edit">{{ item.text }}</span>
+  <button type="button" class="wip-delete" title="Delete" aria-label="Delete">
+    <i class="bi bi-x-lg"></i>
+  </button>
+</li>

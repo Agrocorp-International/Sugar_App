@@ -10,6 +10,12 @@
     {% if pricing_date %}<span class="text-muted ms-2">({{ pricing_date.strftime('%d %b %Y') }})</span>{% endif %}
     {% if watched %}<span class="badge bg-secondary ms-2 fs-6">{{ watched|length }}</span>{% endif %}
   </h4>
+  {% if last_sett_sgt or last_live_sgt %}
+  <div class="text-muted small text-end lh-sm">
+    <div><i class="bi bi-clock-history me-1"></i>Sett-1: {{ last_sett_sgt.strftime('%d %b %Y, %H:%M:%S') + ' SGT' if last_sett_sgt else '—' }}</div>
+    <div><i class="bi bi-activity me-1"></i>Live: {{ last_live_sgt.strftime('%d %b %Y, %H:%M:%S') + ' SGT' if last_live_sgt else '—' }}</div>
+  </div>
+  {% endif %}
 </div>
 
 {% if missing_prices %}

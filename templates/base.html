@@ -229,7 +229,7 @@
       </div>
       <div class="collapse navbar-collapse">
         {% set ep = request.endpoint or '' %}
-        {% set others_eps = ['ffa.index', 'info.index', 'admin.index'] %}
+        {% set others_eps = ['ffa.index', 'info.index', 'admin.index', 'wip.index'] %}
         <ul class="navbar-nav ms-auto">
           {% if _section == 'sugar' %}
           <li class="nav-item">
@@ -277,6 +277,11 @@
               <li>
                 <a class="dropdown-item {% if ep == 'info.index' %}active{% endif %}" href="{{ url_for('info.index') }}">
                   <i class="bi bi-calendar-event me-2"></i>Info
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item {% if ep == 'wip.index' %}active{% endif %}" href="{{ url_for('wip.index') }}">
+                  <i class="bi bi-list-check me-2"></i>Work In Progress
                 </a>
               </li>
               <li>

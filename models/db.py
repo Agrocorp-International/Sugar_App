@@ -70,6 +70,8 @@ class MarketPrice(db.Model):
     live_delta = db.Column(db.Float)    # Delta computed from live mid price
     sett_date  = db.Column(db.Date)     # Actual settlement bar date from TradeStation
     fetched_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sett_fetched_at = db.Column(db.DateTime)   # Last sett-1 fetch (UTC)
+    live_fetched_at = db.Column(db.DateTime)   # Last live fetch (UTC)
 
     def __repr__(self):
         return f"<MarketPrice {self.contract} {self.settlement}>"
@@ -229,3 +231,43 @@ class SimStack(db.Model):
 
     def __repr__(self):
         return f"<SimStack {self.label}>"
+
+
+class WIPChecklistItem(db.Model):
+    __tablename__ = "sugar_wip_checklist_items"
+
+    id           = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    text         = db.Column(db.String(500), nullable=False)
+    completed    = db.Column(db.Boolean, nullable=False, default=False)
+    sort_order   = db.Column(db.Integer, nullable=False, default=0)
+    created_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "text": self.text,
+            "completed": bool(self.completed),
+            "sort_order": self.sort_order,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+class MeetingNote(db.Model):
+    __tablename__ = "sugar_meeting_notes"
+
+    id         = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title      = db.Column(db.String(200), nullable=False, default="Untitled")
+    body       = db.Column(db.Text, nullable=False, default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "body": self.body,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

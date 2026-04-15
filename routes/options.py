@@ -262,8 +262,12 @@ def index():
                           key=lambda g: (_pc_order.get(g.get('Put_Call_2__c'), 3),
                                          g.get('contract_key', '')))
 
-    # Portfolio delta = sum of positions (futures: net_lots, options: delta × net_lots)
-    portfolio['delta'] = sum(g['position'] or 0 for g in grouped_legs)
+    # Portfolio delta = sum of options positions only (exclude futures)
+    portfolio['delta'] = sum(
+        (g['position'] or 0)
+        for g in grouped_legs
+        if g.get('Put_Call_2__c') and g.get('Strike__c') is not None
+    )
 
     latest_expiry = max(
         (g['expiry'] for g in grouped_legs if g['expiry'] is not None),
@@ -753,9 +757,7 @@ def sim_load_positions():
             'vega': round(vega_v, 2), 'theta': round(theta_v, 2),
         })
 
-    # Add futures delta to summary (net_lots, same as Payoff)
-    for g in fut_groups.values():
-        greeks_summary['delta'] += g['net_lots']
+    # Portfolio delta excludes futures (options-only, same as Payoff)
 
     db.session.commit()
 

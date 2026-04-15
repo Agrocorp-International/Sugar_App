@@ -1,0 +1,642 @@
+{% extends "base.html" %}
+{% block title %}Work In Progress - Sugar Trading{% endblock %}
+
+{% block content %}
+<style>
+  .wip-page { max-width: 1200px; }
+  .wip-page h4 { font-weight: 600; }
+
+  /* ── Tabs ──────────────────────────────────────────────── */
+  .wip-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 1.25rem;
+  }
+  .wip-tab {
+    border: none;
+    background: transparent;
+    padding: 10px 18px;
+    font-size: .92rem;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+  }
+  .wip-tab:hover { color: #374151; }
+  .wip-tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+  .wip-tab-panel { display: none; }
+  .wip-tab-panel.active { display: block; }
+
+  /* ── Checklist: input bar ──────────────────────────────── */
+  .wip-add-wrap { position: relative; margin-bottom: 1.75rem; }
+  .wip-add-input {
+    width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px 96px 12px 44px;
+    font-size: 0.95rem;
+    background: #fff;
+    transition: border-color .15s, box-shadow .15s;
+    outline: none;
+  }
+  .wip-add-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .wip-add-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #9ca3af; pointer-events: none; }
+  .wip-add-btn {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    border: none; background: #3b82f6; color: #fff;
+    border-radius: 8px; padding: 6px 14px;
+    font-size: .85rem; font-weight: 500; cursor: pointer;
+    transition: background .15s, opacity .15s;
+  }
+  .wip-add-btn:hover { background: #2563eb; }
+  .wip-add-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .wip-add-error { color: #dc2626; font-size: .85rem; margin-top: 6px; }
+
+  /* ── Checklist columns ─────────────────────────────────── */
+  .wip-col {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px 14px 10px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  }
+  .wip-col.wip-col-done { background: #fafafa; }
+  .wip-col-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 6px 10px;
+    border-bottom: 1px solid #f1f3f5;
+    margin-bottom: 8px;
+  }
+  .wip-col-title { font-size: .8rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #6b7280; }
+  .wip-col-count { font-size: .75rem; color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: 2px 10px; font-weight: 500; }
+  .wip-list { list-style: none; padding: 0; margin: 0; min-height: 60px; }
+
+  .wip-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    transition: background .15s, transform .15s, opacity .2s;
+  }
+  .wip-item:hover { background: #f9fafb; }
+  .wip-item.moving { opacity: 0; transform: scale(.98); }
+
+  .wip-checkbox-wrap { position: relative; display: inline-flex; width: 18px; height: 18px; margin: 0; cursor: pointer; flex-shrink: 0; }
+  .wip-checkbox { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .wip-checkbox-box {
+    display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px;
+    border: 1.5px solid #d1d5db; border-radius: 5px;
+    background: #fff; color: transparent; font-size: .75rem;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .wip-checkbox:hover + .wip-checkbox-box { border-color: #9ca3af; }
+  .wip-checkbox:checked + .wip-checkbox-box { background: #10b981; border-color: #10b981; color: #fff; }
+
+  .wip-text {
+    flex: 1; font-size: .92rem; color: #1f2937; cursor: text;
+    padding: 2px 4px; border-radius: 4px; word-break: break-word;
+  }
+  .wip-item:hover .wip-text { text-decoration: underline; text-decoration-color: #d1d5db; text-underline-offset: 3px; }
+  .wip-text input {
+    width: 100%; border: 1px solid #3b82f6; border-radius: 6px;
+    padding: 4px 8px; font-size: .92rem; outline: none;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .wip-done .wip-text { text-decoration: line-through; color: #9ca3af; }
+  .wip-done:hover .wip-text { text-decoration: line-through; }
+
+  .wip-delete {
+    border: none; background: transparent; color: #9ca3af;
+    width: 26px; height: 26px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0;
+    transition: opacity .15s, background .15s, color .15s;
+    font-size: .8rem; flex-shrink: 0;
+  }
+  .wip-item:hover .wip-delete { opacity: 1; }
+  .wip-delete:hover { background: #fee2e2; color: #dc2626; }
+
+  .wip-empty { text-align: center; padding: 28px 12px; color: #9ca3af; font-size: .88rem; }
+  .wip-empty .wip-empty-emoji { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+
+  /* ── Notes shell ───────────────────────────────────────── */
+  .notes-shell {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 16px;
+    height: calc(100vh - 260px);
+    min-height: 460px;
+  }
+  .notes-sidebar, .notes-editor {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .notes-sidebar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid #f1f3f5;
+  }
+  .notes-sidebar-title { font-size: .8rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #6b7280; }
+  .notes-new-btn {
+    border: none; background: #3b82f6; color: #fff;
+    border-radius: 8px; padding: 5px 10px;
+    font-size: .8rem; font-weight: 500; cursor: pointer;
+    transition: background .15s;
+  }
+  .notes-new-btn:hover { background: #2563eb; }
+
+  .notes-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+  .note-row {
+    padding: 10px 12px; border-radius: 8px;
+    cursor: pointer; transition: background .15s;
+    border: 1px solid transparent;
+  }
+  .note-row:hover { background: #f9fafb; }
+  .note-row.active { background: #eff6ff; border-color: #bfdbfe; }
+  .note-row-title {
+    font-size: .9rem; font-weight: 500; color: #1f2937;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;
+  }
+  .note-row-meta { font-size: .72rem; color: #9ca3af; }
+  .note-row-preview {
+    font-size: .75rem; color: #6b7280;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+  }
+
+  .notes-editor-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid #f1f3f5;
+  }
+  .notes-title-input {
+    flex: 1; border: none; outline: none;
+    font-size: 1.15rem; font-weight: 600;
+    background: transparent; color: #1f2937; padding: 2px 0;
+  }
+  .notes-title-input::placeholder { color: #d1d5db; font-weight: 500; }
+  .notes-save-status { font-size: .75rem; color: #9ca3af; min-width: 80px; text-align: right; }
+  .notes-save-status.saved { color: #10b981; }
+  .notes-save-status.saving { color: #6b7280; }
+  .notes-delete-btn {
+    border: none; background: transparent; color: #9ca3af;
+    width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .notes-delete-btn:hover { background: #fee2e2; color: #dc2626; }
+  .notes-body-input {
+    flex: 1; border: none; outline: none; resize: none;
+    padding: 16px 20px; font-size: .95rem; line-height: 1.6;
+    font-family: inherit; color: #1f2937; background: #fff;
+  }
+  .notes-body-input::placeholder { color: #d1d5db; }
+  .notes-empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    flex: 1; color: #9ca3af; text-align: center; padding: 20px;
+  }
+  .notes-empty-emoji { font-size: 2.4rem; margin-bottom: 10px; }
+  .notes-sidebar-empty { padding: 24px 12px; text-align: center; color: #9ca3af; font-size: .82rem; }
+</style>
+
+<div class="wip-page">
+  <div class="mb-3">
+    <h4 class="mb-1">Work In Progress</h4>
+    <p class="text-muted small mb-0">Track features and capture meeting notes.</p>
+  </div>
+
+  <div class="wip-tabs">
+    <button type="button" class="wip-tab active" data-panel="panel-checklist">
+      <i class="bi bi-list-check me-1"></i> Checklist
+    </button>
+    <button type="button" class="wip-tab" data-panel="panel-notes">
+      <i class="bi bi-journal-text me-1"></i> Meeting Notes
+    </button>
+  </div>
+
+  {# ─────────────────────── Checklist panel ─────────────────────── #}
+  <div class="wip-tab-panel active" id="panel-checklist">
+    <div class="wip-add-wrap">
+      <i class="bi bi-plus-lg wip-add-icon"></i>
+      <input type="text" id="wip-add-input" class="wip-add-input"
+             placeholder="Add a new task…" maxlength="{{ max_len }}" autocomplete="off">
+      <button type="button" id="wip-add-btn" class="wip-add-btn" disabled>Add</button>
+      <div id="wip-add-error" class="wip-add-error d-none"></div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="wip-col">
+          <div class="wip-col-header">
+            <span class="wip-col-title">Open</span>
+            <span class="wip-col-count" id="wip-open-count">{{ open_items|length }}</span>
+          </div>
+          <ul class="wip-list" id="wip-open-list">
+            {% for item in open_items %}{% include "_wip_item.html" %}{% endfor %}
+          </ul>
+          <div class="wip-empty {% if open_items %}d-none{% endif %}" id="wip-open-empty">
+            <span class="wip-empty-emoji">🎉</span>
+            Nothing here yet! Add your first task above.
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="wip-col wip-col-done">
+          <div class="wip-col-header">
+            <span class="wip-col-title">Done</span>
+            <span class="wip-col-count" id="wip-done-count">{{ done_items|length }}</span>
+          </div>
+          <ul class="wip-list" id="wip-done-list">
+            {% for item in done_items %}{% include "_wip_item.html" %}{% endfor %}
+          </ul>
+          <div class="wip-empty {% if done_items %}d-none{% endif %}" id="wip-done-empty">
+            <span class="wip-empty-emoji">✅</span>
+            Completed tasks will show up here.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────── Notes panel ─────────────────────── #}
+  <div class="wip-tab-panel" id="panel-notes">
+    <div class="notes-shell">
+      <aside class="notes-sidebar">
+        <div class="notes-sidebar-header">
+          <span class="notes-sidebar-title">All Notes</span>
+          <button type="button" class="notes-new-btn" id="notes-new-btn">
+            <i class="bi bi-plus-lg"></i> New
+          </button>
+        </div>
+        <ul class="notes-list" id="notes-list">
+          {% for n in notes %}
+            <li class="note-row" data-id="{{ n.id }}" data-title="{{ n.title }}" data-body="{{ n.body }}">
+              <div class="note-row-title">{{ n.title }}</div>
+              <div class="note-row-meta">{{ n.updated_at | sgt }}</div>
+              <div class="note-row-preview">{{ n.body[:80] }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+        <div class="notes-sidebar-empty {% if notes %}d-none{% endif %}" id="notes-sidebar-empty">
+          No notes yet.<br>Click <b>+ New</b> to start.
+        </div>
+      </aside>
+
+      <section class="notes-editor">
+        <div class="notes-editor-header d-none" id="notes-editor-header">
+          <input type="text" id="notes-title-input" class="notes-title-input"
+                 placeholder="Untitled" maxlength="{{ note_title_max }}">
+          <span class="notes-save-status" id="notes-save-status"></span>
+          <button type="button" class="notes-delete-btn" id="notes-delete-btn" title="Delete note">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+        <textarea id="notes-body-input" class="notes-body-input d-none"
+                  placeholder="Write your notes here…" maxlength="{{ note_body_max }}"></textarea>
+        <div class="notes-empty" id="notes-empty">
+          <div class="notes-empty-emoji">📝</div>
+          <div>Select a note on the left, or create a new one.</div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ── Tabs ────────────────────────────────────────────────
+  document.querySelectorAll('.wip-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.wip-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.wip-tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.panel).classList.add('active');
+      try { localStorage.setItem('wip-tab', btn.dataset.panel); } catch (e) {}
+    });
+  });
+  try {
+    const saved = localStorage.getItem('wip-tab');
+    if (saved) {
+      const btn = document.querySelector(`.wip-tab[data-panel="${saved}"]`);
+      if (btn) btn.click();
+    }
+  } catch (e) {}
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    return data;
+  }
+
+  // ══════════════════════ Checklist ════════════════════════
+  (function initChecklist() {
+    const MAX_LEN = {{ max_len }};
+    const openList = document.getElementById('wip-open-list');
+    const doneList = document.getElementById('wip-done-list');
+    const openEmpty = document.getElementById('wip-open-empty');
+    const doneEmpty = document.getElementById('wip-done-empty');
+    const openCount = document.getElementById('wip-open-count');
+    const doneCount = document.getElementById('wip-done-count');
+    const addInput = document.getElementById('wip-add-input');
+    const addBtn   = document.getElementById('wip-add-btn');
+    const addErr   = document.getElementById('wip-add-error');
+    const panel    = document.getElementById('panel-checklist');
+
+    function showErr(msg) { addErr.textContent = msg; addErr.classList.remove('d-none'); }
+    function clearErr()   { addErr.classList.add('d-none'); }
+
+    function refreshCounts() {
+      const openN = openList.querySelectorAll('li.wip-item').length;
+      const doneN = doneList.querySelectorAll('li.wip-item').length;
+      openCount.textContent = openN;
+      doneCount.textContent = doneN;
+      openEmpty.classList.toggle('d-none', openN > 0);
+      doneEmpty.classList.toggle('d-none', doneN > 0);
+    }
+
+    function buildItem(item) {
+      const li = document.createElement('li');
+      li.className = 'wip-item' + (item.completed ? ' wip-done' : '');
+      li.dataset.id = item.id;
+      li.innerHTML = `
+        <label class="wip-checkbox-wrap">
+          <input type="checkbox" class="wip-checkbox" ${item.completed ? 'checked' : ''}>
+          <span class="wip-checkbox-box"><i class="bi bi-check-lg"></i></span>
+        </label>
+        <span class="wip-text" title="Click to edit"></span>
+        <button type="button" class="wip-delete" title="Delete" aria-label="Delete">
+          <i class="bi bi-x-lg"></i>
+        </button>`;
+      li.querySelector('.wip-text').textContent = item.text;
+      return li;
+    }
+
+    addInput.addEventListener('input', () => {
+      addBtn.disabled = addInput.value.trim().length === 0;
+      clearErr();
+    });
+    async function doAdd() {
+      clearErr();
+      const text = addInput.value.trim();
+      if (!text) return;
+      if (text.length > MAX_LEN) { showErr('Too long.'); return; }
+      try {
+        const item = await postJSON('{{ url_for("wip.api_add") }}', { text });
+        openList.appendChild(buildItem(item));
+        addInput.value = '';
+        addBtn.disabled = true;
+        refreshCounts();
+        addInput.focus();
+      } catch (err) { showErr(err.message); }
+    }
+    addBtn.addEventListener('click', doAdd);
+    addInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doAdd(); }
+    });
+
+    panel.addEventListener('change', async (e) => {
+      if (!e.target.classList.contains('wip-checkbox')) return;
+      const li = e.target.closest('li.wip-item');
+      if (!li) return;
+      const id = parseInt(li.dataset.id, 10);
+      const completed = e.target.checked;
+      try {
+        await postJSON('{{ url_for("wip.api_set_completed") }}', { id, completed });
+        li.classList.add('moving');
+        setTimeout(() => {
+          const newLi = buildItem({
+            id,
+            text: li.querySelector('.wip-text').textContent,
+            completed,
+          });
+          li.remove();
+          (completed ? doneList : openList).appendChild(newLi);
+          refreshCounts();
+        }, 160);
+      } catch (err) {
+        e.target.checked = !e.target.checked;
+        alert('Failed: ' + err.message);
+      }
+    });
+
+    panel.addEventListener('click', async (e) => {
+      const li = e.target.closest('li.wip-item');
+      if (!li) return;
+
+      const delBtn = e.target.closest('.wip-delete');
+      if (delBtn) {
+        if (!confirm('Delete this task?')) return;
+        const id = parseInt(li.dataset.id, 10);
+        try {
+          await postJSON('{{ url_for("wip.api_delete") }}', { id });
+          li.classList.add('moving');
+          setTimeout(() => { li.remove(); refreshCounts(); }, 160);
+        } catch (err) { alert('Failed: ' + err.message); }
+        return;
+      }
+
+      const span = e.target.closest('.wip-text');
+      if (!span || span.querySelector('input')) return;
+      const id = parseInt(li.dataset.id, 10);
+      const original = span.textContent;
+      span.textContent = '';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = original;
+      input.maxLength = MAX_LEN;
+      span.appendChild(input);
+      input.focus();
+      input.select();
+
+      let done = false;
+      const finish = async (save) => {
+        if (done) return; done = true;
+        const newText = input.value.trim();
+        if (!save || !newText || newText === original) {
+          span.textContent = original;
+          return;
+        }
+        try {
+          const updated = await postJSON('{{ url_for("wip.api_update") }}', { id, text: newText });
+          span.textContent = updated.text;
+        } catch (err) {
+          span.textContent = original;
+          alert('Failed: ' + err.message);
+        }
+      };
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+      });
+      input.addEventListener('blur', () => finish(true));
+    });
+  })();
+
+  // ══════════════════════ Notes ════════════════════════════
+  (function initNotes() {
+    const listEl       = document.getElementById('notes-list');
+    const sidebarEmpty = document.getElementById('notes-sidebar-empty');
+    const newBtn       = document.getElementById('notes-new-btn');
+    const headerEl     = document.getElementById('notes-editor-header');
+    const bodyEl       = document.getElementById('notes-body-input');
+    const emptyEl      = document.getElementById('notes-empty');
+    const titleInput   = document.getElementById('notes-title-input');
+    const statusEl     = document.getElementById('notes-save-status');
+    const deleteBtn    = document.getElementById('notes-delete-btn');
+
+    const URL_CREATE = '{{ url_for("notes.api_create") }}';
+    const URL_UPDATE = '{{ url_for("notes.api_update") }}';
+    const URL_DELETE = '{{ url_for("notes.api_delete") }}';
+
+    let currentId = null;
+    let saveTimer = null;
+
+    function fmtDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const sgt = new Date(d.getTime() + 8 * 3600 * 1000);
+      return sgt.toISOString().slice(0, 16).replace('T', ' ') + ' SGT';
+    }
+
+    function openEditor() {
+      headerEl.classList.remove('d-none');
+      bodyEl.classList.remove('d-none');
+      emptyEl.classList.add('d-none');
+    }
+    function closeEditor() {
+      headerEl.classList.add('d-none');
+      bodyEl.classList.add('d-none');
+      emptyEl.classList.remove('d-none');
+      currentId = null;
+    }
+
+    function highlightRow(id) {
+      listEl.querySelectorAll('.note-row').forEach(r => {
+        r.classList.toggle('active', parseInt(r.dataset.id, 10) === id);
+      });
+    }
+
+    function updateRow(note) {
+      const row = listEl.querySelector(`.note-row[data-id="${note.id}"]`);
+      if (!row) return;
+      row.dataset.title = note.title;
+      row.dataset.body = note.body;
+      row.querySelector('.note-row-title').textContent = note.title;
+      row.querySelector('.note-row-meta').textContent = fmtDate(note.updated_at);
+      row.querySelector('.note-row-preview').textContent = (note.body || '').slice(0, 80);
+      if (listEl.firstChild !== row) listEl.prepend(row);
+    }
+
+    function addRow(note) {
+      const row = document.createElement('li');
+      row.className = 'note-row';
+      row.dataset.id = note.id;
+      row.dataset.title = note.title;
+      row.dataset.body = note.body;
+      row.innerHTML = `
+        <div class="note-row-title"></div>
+        <div class="note-row-meta"></div>
+        <div class="note-row-preview"></div>`;
+      row.querySelector('.note-row-title').textContent = note.title;
+      row.querySelector('.note-row-meta').textContent = fmtDate(note.updated_at);
+      row.querySelector('.note-row-preview').textContent = (note.body || '').slice(0, 80);
+      listEl.prepend(row);
+      sidebarEmpty.classList.add('d-none');
+    }
+
+    function selectNote(id) {
+      const row = listEl.querySelector(`.note-row[data-id="${id}"]`);
+      if (!row) return;
+      currentId = id;
+      titleInput.value = row.dataset.title || '';
+      bodyEl.value = row.dataset.body || '';
+      setStatus('');
+      openEditor();
+      highlightRow(id);
+    }
+
+    function setStatus(kind) {
+      statusEl.style.color = '';
+      if (kind === 'saving') { statusEl.textContent = 'Saving…'; statusEl.className = 'notes-save-status saving'; }
+      else if (kind === 'saved') { statusEl.textContent = 'Saved'; statusEl.className = 'notes-save-status saved'; }
+      else { statusEl.textContent = ''; statusEl.className = 'notes-save-status'; }
+    }
+
+    async function persistCurrent() {
+      if (currentId == null) return;
+      setStatus('saving');
+      try {
+        const note = await postJSON(URL_UPDATE, {
+          id: currentId,
+          title: titleInput.value,
+          body: bodyEl.value,
+        });
+        updateRow(note);
+        highlightRow(currentId);
+        setStatus('saved');
+        setTimeout(() => { if (statusEl.classList.contains('saved')) setStatus(''); }, 1500);
+      } catch (err) {
+        statusEl.textContent = 'Save failed';
+        statusEl.className = 'notes-save-status';
+        statusEl.style.color = '#dc2626';
+      }
+    }
+
+    function scheduleSave() {
+      if (currentId == null) return;
+      setStatus('saving');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(persistCurrent, 600);
+    }
+
+    listEl.addEventListener('click', (e) => {
+      const row = e.target.closest('.note-row');
+      if (!row) return;
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; persistCurrent(); }
+      selectNote(parseInt(row.dataset.id, 10));
+    });
+
+    newBtn.addEventListener('click', async () => {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; persistCurrent(); }
+      try {
+        const note = await postJSON(URL_CREATE, { title: 'Untitled', body: '' });
+        addRow(note);
+        selectNote(note.id);
+        titleInput.focus();
+        titleInput.select();
+      } catch (err) { alert('Failed: ' + err.message); }
+    });
+
+    titleInput.addEventListener('input', scheduleSave);
+    bodyEl.addEventListener('input', scheduleSave);
+    titleInput.addEventListener('blur', () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; persistCurrent(); } });
+    bodyEl.addEventListener('blur', () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; persistCurrent(); } });
+
+    deleteBtn.addEventListener('click', async () => {
+      if (currentId == null) return;
+      if (!confirm('Delete this note? This cannot be undone.')) return;
+      const id = currentId;
+      try {
+        await postJSON(URL_DELETE, { id });
+        const row = listEl.querySelector(`.note-row[data-id="${id}"]`);
+        if (row) row.remove();
+        closeEditor();
+        if (!listEl.querySelector('.note-row')) sidebarEmpty.classList.remove('d-none');
+      } catch (err) { alert('Failed: ' + err.message); }
+    });
+
+    const firstRow = listEl.querySelector('.note-row');
+    if (firstRow) selectNote(parseInt(firstRow.dataset.id, 10));
+  })();
+})();
+</script>
+{% endblock %}

@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from services.tradestation import fetch_prices as _ts_fetch_prices, _fetch_sofr
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -76,9 +76,19 @@ def index():
     # Pricing date: read the actual settlement date stored from last fetch
     pricing_date = db.session.query(db.func.max(MarketPrice.sett_date)).scalar()
 
+    sgt = timezone(timedelta(hours=8))
+    def _to_sgt(dt):
+        if dt is None:
+            return None
+        return dt.replace(tzinfo=timezone.utc).astimezone(sgt)
+
+    last_sett_sgt = _to_sgt(db.session.query(db.func.max(MarketPrice.sett_fetched_at)).scalar())
+    last_live_sgt = _to_sgt(db.session.query(db.func.max(MarketPrice.live_fetched_at)).scalar())
+
     return render_template("prices.html", watched=watched, price_map=price_map,
                            missing_prices=missing_prices, expiry_map=expiry_map,
-                           pricing_date=pricing_date)
+                           pricing_date=pricing_date,
+                           last_sett_sgt=last_sett_sgt, last_live_sgt=last_live_sgt)
 
 
 @prices_bp.route("/prices/fetch", methods=["POST"])
@@ -112,6 +122,13 @@ def fetch_tradestation():
                     )
                 )
 
+        now_utc = datetime.utcnow()
+        for r in results:
+            if mode in ("sett1", "all"):
+                r["sett_fetched_at"] = now_utc
+            if mode in ("live", "all"):
+                r["live_fetched_at"] = now_utc
+
         stmt = pg_insert(MarketPrice).values(results)
         if mode == "sett1":
             update_cols = {
@@ -120,6 +137,7 @@ def fetch_tradestation():
                 "iv":         stmt.excluded.iv,
                 "sett_date":  stmt.excluded.sett_date,
                 "fetched_at": stmt.excluded.fetched_at,
+                "sett_fetched_at": stmt.excluded.sett_fetched_at,
             }
         elif mode == "live":
             update_cols = {
@@ -128,6 +146,7 @@ def fetch_tradestation():
                 "live_delta": stmt.excluded.live_delta,
                 "sett_date":  stmt.excluded.sett_date,
                 "fetched_at": stmt.excluded.fetched_at,
+                "live_fetched_at": stmt.excluded.live_fetched_at,
             }
         else:  # all
             update_cols = {
@@ -139,6 +158,8 @@ def fetch_tradestation():
                 "live_delta": stmt.excluded.live_delta,
                 "sett_date":  stmt.excluded.sett_date,
                 "fetched_at": stmt.excluded.fetched_at,
+                "sett_fetched_at": stmt.excluded.sett_fetched_at,
+                "live_fetched_at": stmt.excluded.live_fetched_at,
             }
         stmt = stmt.on_conflict_do_update(index_elements=["contract"], set_=update_cols)
         db.session.execute(stmt)
