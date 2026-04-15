@@ -4,6 +4,8 @@ flask-sqlalchemy
 psycopg2-binary
 python-dotenv
 simple-salesforce
+pandas
+numpy
 openpyxl
 holidays>=0.40
 
