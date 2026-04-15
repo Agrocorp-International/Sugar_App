@@ -3,12 +3,21 @@ import tempfile
 from datetime import date, datetime
 from pathlib import Path
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
 from models.db import db, AutoTagRun
 
 admin_bp = Blueprint("admin", __name__)
 
-_UPLOAD_DIR = Path(tempfile.gettempdir()) / "sugar_admin_upload"
+
+def _upload_base_dir() -> Path:
+    # Azure App Service Linux exposes /home as persistent storage (survives restarts).
+    # Locally fall back to the OS temp directory.
+    if os.environ.get("WEBSITE_SITE_NAME"):
+        return Path("/home/data/sugar_admin")
+    return Path(tempfile.gettempdir())
+
+
+_UPLOAD_DIR = _upload_base_dir() / "sugar_admin_upload"
 
 # ── Default date filters (update these when the year rolls over) ─────────────
 AUTO_TAG_DEFAULT_START = "2025-12-31"
@@ -162,6 +171,7 @@ def auto_tag_preview():
         payload = build_preview(sf, xlsx_path, start_d, end_d)
         payload["filename"] = xlsx_name
     except Exception as e:  # noqa: BLE001
+        current_app.logger.exception("auto_tag preview failed")
         flash(f"Auto-tag preview failed: {e}", "danger")
         return redirect(url_for("admin.index"))
 
@@ -193,6 +203,7 @@ def auto_tag_confirm():
         sf = get_sf_connection()
         reports = execute_full_push(sf, staged["batches"])
     except Exception as e:  # noqa: BLE001
+        current_app.logger.exception("auto_tag push failed")
         flash(f"Auto-tag push failed: {e}", "danger")
         return redirect(url_for("admin.index"))
 
@@ -301,6 +312,7 @@ def spec_check_preview():
         payload = build_spec_preview(sf, xlsx_path, start_d, end_d)
         payload["filename"] = xlsx_name
     except Exception as e:  # noqa: BLE001
+        current_app.logger.exception("spec_check preview failed")
         flash(f"Spec check failed: {e}", "danger")
         return redirect(url_for("admin.index"))
 
@@ -360,6 +372,7 @@ def it_check_preview():
         sf = get_sf_connection()
         payload = build_it_check_preview(sf, start_d, end_d)
     except Exception as e:  # noqa: BLE001
+        current_app.logger.exception("it_check preview failed")
         flash(f"Internal transfer check failed: {e}", "danger")
         return redirect(url_for("admin.index"))
 

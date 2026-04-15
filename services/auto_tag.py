@@ -673,7 +673,14 @@ def execute_full_push(sf, batches: UpdateBatches) -> dict:
 # Step 6 — staging (preview → confirm) via tempfile
 # =============================================================================
 
-STAGE_DIR = Path(tempfile.gettempdir()) / "sugar_auto_tag"
+def _persistent_base_dir() -> Path:
+    # On Azure App Service Linux, /home is a persistent share. Elsewhere, use tempdir.
+    if os.environ.get("WEBSITE_SITE_NAME"):
+        return Path("/home/data/sugar_admin")
+    return Path(tempfile.gettempdir())
+
+
+STAGE_DIR = _persistent_base_dir() / "sugar_auto_tag"
 STAGE_TTL_SECONDS = 60 * 60  # 1 hour
 
 
