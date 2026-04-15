@@ -1,12 +1,15 @@
+import os
 from datetime import datetime, date
-from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response
+from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response, jsonify, abort
 from sqlalchemy import cast, Date
-from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot
+from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot, PnlSnapshotSchedule
 from routes.info import (_parse_futures, _parse_options, _parse_sw_futures,
                          _RAW_FUTURES, _RAW_OPTIONS, _RAW_SW_FUTURES, _RAW_HOLIDAYS)
 from services.pnl_summary import compute_pnl_summary, compute_exposure, get_reference_snapshots
 from services.physical_pnl import compute_all_pnl_totals
 from services.price_source import get_price_source
+from services.snapshots import create_snapshot
+from services.schedule import is_due
 
 _DTE_WARN_DAYS = 10  # highlight DTE column when this close to expiry
 
@@ -59,6 +62,8 @@ def index():
         pass
 
     snap_slots = {'daily': daily_s, 'weekly': weekly_s, 'monthly': monthly_s}
+
+    schedules = {s.slot: s for s in PnlSnapshotSchedule.query.all()}
 
     daily_delta = weekly_delta = monthly_delta = None
     if pnl_summary:
@@ -138,6 +143,7 @@ def index():
         exposure=exposure,
         pnl_changes=pnl_changes,
         snap_slots=snap_slots,
+        schedules=schedules,
         upcoming_rows=upcoming_rows,
         price_source=price_source,
     )
@@ -173,17 +179,92 @@ def save_snapshot(slot):
     if slot not in ('daily', 'weekly', 'monthly'):
         return redirect(url_for("dashboard.index"))
     try:
-        _lt = TradePosition.query.order_by(
-            cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
-        ).first()
-        as_of = _lt.data.get("Trade_Date__c") if _lt else None
-        pnl_data = compute_pnl_summary()
-        pnl_data["as_of_date"] = as_of
-        snap = PnlSnapshot(slot=slot, snapshotted_at=datetime.utcnow(), data=pnl_data)
-        db.session.merge(snap)
-        db.session.commit()
+        create_snapshot(slot, source="manual")
         flash(f"{slot.capitalize()} snapshot saved.", "success")
     except Exception as e:
+        db.session.rollback()
         current_app.logger.exception("Snapshot save failed")
         flash(f"Snapshot failed: {e}", "danger")
     return redirect(url_for("dashboard.index"))
+
+
+@dashboard_bp.route("/snapshot/schedule/<slot>", methods=["POST"])
+def save_snapshot_schedule(slot):
+    """Upsert the auto-snapshot schedule for a slot. Normalizes irrelevant
+    fields to null (e.g. weekday cleared when slot is not 'weekly') so stale
+    values can't leak into later tick decisions."""
+    if slot not in ('daily', 'weekly', 'monthly'):
+        return redirect(url_for("dashboard.index"))
+    try:
+        enabled = request.form.get("enabled") == "on"
+        time_str = (request.form.get("time") or "").strip()  # "HH:MM"
+        try:
+            hh, mm = [int(x) for x in time_str.split(":", 1)]
+        except Exception:
+            hh, mm = 18, 0
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            raise ValueError("time must be HH:MM in 00:00..23:59")
+
+        weekday = None
+        day_of_month = None
+        if slot == "weekly":
+            weekday = int(request.form.get("weekday") or 4)  # default Fri
+            if not (0 <= weekday <= 6):
+                raise ValueError("weekday must be 0..6")
+        elif slot == "monthly":
+            dom_raw = request.form.get("day_of_month") or "-1"
+            day_of_month = int(dom_raw)
+            if not (day_of_month == -1 or 1 <= day_of_month <= 28):
+                raise ValueError("day_of_month must be 1..28 or -1")
+
+        sched = db.session.get(PnlSnapshotSchedule, slot)
+        if sched is None:
+            sched = PnlSnapshotSchedule(slot=slot)
+            db.session.add(sched)
+        sched.enabled = enabled
+        sched.hour = hh
+        sched.minute = mm
+        sched.weekday = weekday
+        sched.day_of_month = day_of_month
+        # Editing the schedule resets the idempotency guard so the new
+        # occurrence will be picked up on the next tick.
+        sched.last_scheduled_for = None
+        db.session.commit()
+        flash(f"{slot.capitalize()} schedule saved.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception("Schedule save failed")
+        flash(f"Schedule save failed: {e}", "danger")
+    return redirect(url_for("dashboard.index"))
+
+
+@dashboard_bp.route("/snapshot/tick", methods=["POST"])
+def snapshot_tick():
+    """Cron entrypoint. Requires X-Cron-Key header matching SNAPSHOT_CRON_KEY
+    env var. Iterates enabled schedules; for each one whose scheduled
+    occurrence has passed and hasn't been fired yet, creates an 'auto'
+    snapshot. Per-slot failures do not stop other slots."""
+    expected = os.getenv("SNAPSHOT_CRON_KEY")
+    if not expected or request.headers.get("X-Cron-Key") != expected:
+        abort(403)
+
+    fired, skipped, errors = [], [], []
+    now_utc = datetime.utcnow()
+    schedules = PnlSnapshotSchedule.query.all()
+    for sched in schedules:
+        try:
+            due, occurrence = is_due(sched, now_utc)
+            if not due:
+                skipped.append({"slot": sched.slot, "enabled": sched.enabled,
+                                "occurrence": occurrence.isoformat() if occurrence else None})
+                continue
+            create_snapshot(sched.slot, source="auto", scheduled_for=occurrence)
+            sched.last_scheduled_for = occurrence
+            sched.last_fired_at = now_utc
+            db.session.commit()
+            fired.append({"slot": sched.slot, "occurrence": occurrence.isoformat()})
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.exception("Auto snapshot failed for %s", sched.slot)
+            errors.append({"slot": sched.slot, "error": str(e)})
+    return jsonify({"fired": fired, "skipped": skipped, "errors": errors})

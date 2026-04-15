@@ -577,13 +577,24 @@
   <div class="dash-bot-card card p-4">
     <div class="dash-bot-title">Snapshots</div>
     <div class="dash-snap-list">
+      {% set _wd_names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
       {% for slot in ['daily', 'weekly', 'monthly'] %}
+      {% set sch = schedules.get(slot) %}
       <div class="dash-snap-row">
         <div class="dash-snap-meta">
           <div class="dash-snap-label">{{ slot|capitalize }}</div>
           <div class="dash-snap-time">
-            {% if snap_slots.get(slot) %}{{ snap_slots[slot].snapshotted_at | sgt }}{% else %}<span class="dash-mute">Not saved</span>{% endif %}
+            {% if snap_slots.get(slot) %}{{ snap_slots[slot].snapshotted_at | sgt }}{% if snap_slots[slot].source == 'auto' %} <span class="badge bg-info text-dark">auto</span>{% endif %}{% else %}<span class="dash-mute">Not saved</span>{% endif %}
           </div>
+          {% if sch and sch.enabled %}
+          <div class="dash-snap-time small text-muted">
+            Auto {{ slot }}
+            {% if slot == 'weekly' %} every {{ _wd_names[sch.weekday] if sch.weekday is not none else '—' }}{% endif %}
+            {% if slot == 'monthly' %}{% if sch.day_of_month == -1 %} on last business day{% else %} on day {{ sch.day_of_month }}{% endif %}{% endif %}
+            at {{ "%02d"|format(sch.hour) }}:{{ "%02d"|format(sch.minute) }} SGT
+            {% if sch.last_fired_at %}· last fired {{ sch.last_fired_at | sgt }}{% endif %}
+          </div>
+          {% endif %}
         </div>
         <form action="{{ url_for('dashboard.save_snapshot', slot=slot) }}" method="POST">
           <button type="submit" class="btn btn-sm btn-outline-secondary"
@@ -592,8 +603,31 @@
           </button>
         </form>
       </div>
+      <form action="{{ url_for('dashboard.save_snapshot_schedule', slot=slot) }}" method="POST" class="dash-snap-sched d-flex flex-wrap gap-2 align-items-center mb-2 ms-3 small">
+        <div class="form-check form-check-inline m-0">
+          <input class="form-check-input" type="checkbox" name="enabled" id="sched_{{ slot }}_enabled" {% if sch and sch.enabled %}checked{% endif %}>
+          <label class="form-check-label" for="sched_{{ slot }}_enabled">Auto</label>
+        </div>
+        <input type="time" name="time" class="form-control form-control-sm" style="width: 110px;"
+               value="{{ '%02d:%02d'|format(sch.hour, sch.minute) if sch else '18:00' }}">
+        {% if slot == 'weekly' %}
+        <select name="weekday" class="form-select form-select-sm" style="width: 110px;">
+          {% for i, n in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+          <option value="{{ i }}" {% if sch and sch.weekday == i %}selected{% elif not sch and i == 4 %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+        {% elif slot == 'monthly' %}
+        <select name="day_of_month" class="form-select form-select-sm" style="width: 160px;">
+          <option value="-1" {% if sch and sch.day_of_month == -1 %}selected{% elif not sch %}selected{% endif %}>Last business day</option>
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}" {% if sch and sch.day_of_month == d %}selected{% endif %}>Day {{ d }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+        <button type="submit" class="btn btn-sm btn-outline-primary">Save schedule</button>
+      </form>
       {% endfor %}
-      <div class="dash-snap-help">Changes compare current P&amp;L against each saved snapshot.</div>
+      <div class="dash-snap-help">Changes compare current P&amp;L against each saved snapshot. Auto-save requires an external cron to POST <code>/sugar/snapshot/tick</code> with header <code>X-Cron-Key</code>.</div>
     </div>
   </div>
 

@@ -114,6 +114,11 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS sett_fetched_at TIMESTAMP, "
             "ADD COLUMN IF NOT EXISTS live_fetched_at TIMESTAMP"
         ))
+        db.session.execute(text(
+            "ALTER TABLE sugar_pnl_snapshots "
+            "ADD COLUMN IF NOT EXISTS source VARCHAR(10), "
+            "ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMP"
+        ))
         db.session.commit()
 
     return app

@@ -196,7 +196,7 @@
     <div class="container-fluid px-4">
       {% set _section = g.section or 'sugar' %}
       <a class="navbar-brand" href="{{ url_for('cotton_dashboard.index') if _section == 'cotton' else url_for('dashboard.index') }}">
-        <i class="bi bi-bar-chart-fill me-2"></i>{{ _section|title }} Trading
+        <span class="me-2" style="{% if _section != 'cotton' %}filter: invert(1) grayscale(1) brightness(2);{% endif %}">{% if _section == 'cotton' %}🐑{% else %}🐜{% endif %}</span>{{ _section|title }} Trading
       </a>
       <div class="btn-group btn-group-sm me-3" role="group" aria-label="Commodity switcher">
         <a href="{{ url_for('dashboard.index') }}"

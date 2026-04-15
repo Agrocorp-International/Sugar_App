@@ -150,9 +150,37 @@ class PnlSnapshot(db.Model):
     slot           = db.Column(db.String(10), primary_key=True)  # 'daily', 'weekly', 'monthly'
     snapshotted_at = db.Column(db.DateTime, nullable=False)
     data           = db.Column(db.JSON, nullable=False)
+    source         = db.Column(db.String(10), nullable=True)     # 'manual' | 'auto'
+    scheduled_for  = db.Column(db.DateTime, nullable=True)       # UTC occurrence time for auto saves
 
     def __repr__(self):
         return f"<PnlSnapshot {self.slot} {self.snapshotted_at}>"
+
+
+class PnlSnapshotSchedule(db.Model):
+    """User-configured schedule for auto-saving PnL snapshots.
+
+    One row per slot. Times are in SGT (hour/minute). weekday applies only
+    to slot='weekly' (0=Mon..6=Sun); day_of_month only to slot='monthly'
+    (1..28, or -1 for "last business day"). last_scheduled_for stores the
+    exact UTC occurrence already processed — the idempotency key used by
+    /snapshot/tick to avoid double-fires across cron retries and restarts.
+    """
+    __tablename__ = "sugar_pnl_snapshot_schedules"
+
+    slot               = db.Column(db.String(10), primary_key=True)  # 'daily','weekly','monthly'
+    enabled            = db.Column(db.Boolean, nullable=False, default=False)
+    hour               = db.Column(db.Integer, nullable=False, default=18)
+    minute             = db.Column(db.Integer, nullable=False, default=0)
+    weekday            = db.Column(db.Integer, nullable=True)
+    day_of_month       = db.Column(db.Integer, nullable=True)
+    last_scheduled_for = db.Column(db.DateTime, nullable=True)
+    last_fired_at      = db.Column(db.DateTime, nullable=True)
+    created_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PnlSnapshotSchedule {self.slot} enabled={self.enabled} {self.hour:02d}:{self.minute:02d} SGT>"
 
 
 # ── Simulator models ────────────────────────────────────────────────────────
