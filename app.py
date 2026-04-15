@@ -1,9 +1,6 @@
-import os
-import traceback
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import timedelta
 from urllib.parse import urlencode
-from flask import Flask, g, request, redirect, url_for, render_template_string
+from flask import Flask, g, request, redirect, url_for
 from config import Config
 from models.db import db
 from routes.dashboard import dashboard_bp
@@ -102,23 +99,6 @@ def create_app():
         if prefix in ('SB', 'SW', 'CT'):
             return value[:2] + ' ' + value[2:]
         return value
-
-    @app.errorhandler(Exception)
-    def _show_traceback(e):
-        app.logger.exception("Unhandled exception")
-        tb = traceback.format_exc()
-        try:
-            log_dir = Path("/home/LogFiles") if os.environ.get("WEBSITE_SITE_NAME") else Path(".")
-            log_dir.mkdir(parents=True, exist_ok=True)
-            with open(log_dir / "sugar_app_errors.log", "a", encoding="utf-8") as f:
-                f.write("\n===== " + datetime.utcnow().isoformat() + " =====\n")
-                f.write(tb)
-        except Exception:
-            pass
-        return render_template_string(
-            "<h1>Internal error</h1><pre style='white-space:pre-wrap;font-size:12px'>{{ tb }}</pre>",
-            tb=tb,
-        ), 500
 
     with app.app_context():
         db.create_all()
