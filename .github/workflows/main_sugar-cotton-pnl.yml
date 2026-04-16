@@ -7,7 +7,7 @@ name: Build and deploy Python app to Azure Web App - sugar-cotton-pnl
 on:
   push:
     branches:
-      - main
+      - UAT
   workflow_dispatch:
 
 jobs:
@@ -63,15 +63,15 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_690116B8E4B945C0998D7E82420D69FC }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_8392AE059DAE4A00A3930EC3E8586BF7 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_8E2A2D60FC9A4E8D9EAFF5256C7DE1F3 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_A27386034F8B4AC784AE535D266706C8 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D63373E8562E4692B828BD1A2C53911D }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4DC57C9442564F02850A51057EF0A1C2 }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
-          app-name: 'sugar-cotton-pnl'
+          app-name: 'sugar-cotton-pnl-uat'
           slot-name: 'Production'
           startup-command: 'gunicorn --bind=0.0.0.0:8000 --timeout 600 --workers 1 --threads 2 "app:create_app()"'
           
