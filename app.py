@@ -29,6 +29,10 @@ def create_app():
 
     db.init_app(app)
 
+    # Auto-bump cache version counters on writes to dashboard-relevant tables.
+    from services.cache import install_autobump
+    install_autobump()
+
     # Sugar section — all existing blueprints mounted under /sugar.
     app.register_blueprint(dashboard_bp,         url_prefix="/sugar")
     app.register_blueprint(positions_bp,         url_prefix="/sugar")

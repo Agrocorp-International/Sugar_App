@@ -14,6 +14,7 @@ from services.snapshots import create_snapshot
 from services.schedule import is_due
 from services.var_summary import compute_var_summary
 from services.pnl_attribution import compute_attribution
+from services.cache import get_or_compute, positions_version, prices_version
 
 _DTE_WARN_DAYS = 10  # highlight DTE column when this close to expiry
 
@@ -33,24 +34,51 @@ def index():
 
     last_price_update = MarketPrice.query.order_by(MarketPrice.fetched_at.desc()).first()
 
-    # Compute physical totals once; share with pnl_summary and exposure
+    # Cache key for position/price-dependent computations. Version counters
+    # (bumped on every write path) are the primary invalidation signal;
+    # last_sync_at / last_price_at are belt-and-braces so writes that forget to
+    # bump still invalidate eventually. TTL floor at 120 s is a final safety.
+    _pv = positions_version()
+    _rv = prices_version()
+    _last_sync_at = last_sync.synced_at if last_sync else None
+    _last_price_at = last_price_update.fetched_at if last_price_update else None
+    _dash_key = (_pv, _rv, price_source, _last_sync_at, _last_price_at)
+
     try:
-        physical_totals = compute_all_pnl_totals(price_source)
+        physical_totals = get_or_compute(
+            key=("dashboard.physical_totals",) + _dash_key,
+            ttl=120,
+            fn=lambda: compute_all_pnl_totals(price_source),
+        )
     except Exception:
         physical_totals = None
 
     try:
-        pnl_summary = compute_pnl_summary(price_source, physical_totals=physical_totals)
+        pnl_summary = get_or_compute(
+            key=("dashboard.pnl_summary",) + _dash_key,
+            ttl=120,
+            fn=lambda: compute_pnl_summary(price_source, physical_totals=physical_totals),
+        )
     except Exception:
         pnl_summary = None
 
     try:
-        exposure = compute_exposure(price_source, physical_totals=physical_totals)
+        exposure = get_or_compute(
+            key=("dashboard.exposure",) + _dash_key,
+            ttl=120,
+            fn=lambda: compute_exposure(price_source, physical_totals=physical_totals),
+        )
     except Exception:
         exposure = None
 
+    # VaR reads from public.daily_var (notebook-owned, typically daily updates),
+    # so it's independent of position/price versions — use a plain time TTL.
     try:
-        var_summary = compute_var_summary()
+        var_summary = get_or_compute(
+            key=("dashboard.var_summary",),
+            ttl=300,
+            fn=compute_var_summary,
+        )
     except Exception:
         var_summary = None
 
@@ -88,7 +116,11 @@ def index():
     pnl_attribution = None
     if pnl_summary and daily_s:
         try:
-            pnl_attribution = compute_attribution(daily_s, pnl_summary)
+            pnl_attribution = get_or_compute(
+                key=("dashboard.attribution",) + _dash_key + (daily_s.id,),
+                ttl=120,
+                fn=lambda: compute_attribution(daily_s, pnl_summary),
+            )
         except Exception:
             current_app.logger.exception("attribution render failed")
 
