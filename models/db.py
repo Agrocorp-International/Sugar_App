@@ -247,6 +247,41 @@ class PhysicalDeal(db.Model):
         return f"<PhysicalDeal {self.book} row={self.row_index}>"
 
 
+class PnlOverride(db.Model):
+    __tablename__ = "sugar_pnl_overrides"
+
+    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    slot        = db.Column(db.String(10), nullable=False, default="current",
+                            server_default="current")   # 'current' | 'daily' | 'weekly' | 'monthly'
+    values      = db.Column(db.JSON, nullable=False)
+    source      = db.Column(db.String(20), nullable=False)   # 'seed' | 'upload'
+    filename    = db.Column(db.String(255))
+    source_path = db.Column(db.String(512))
+    sheet_name  = db.Column(db.String(64), nullable=False)
+    uploaded_by = db.Column(db.String(64))
+    file_sha256 = db.Column(db.String(64))
+    is_active   = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    uploaded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "slot": self.slot,
+            "values": self.values,
+            "source": self.source,
+            "filename": self.filename,
+            "source_path": self.source_path,
+            "sheet_name": self.sheet_name,
+            "uploaded_by": self.uploaded_by,
+            "file_sha256": self.file_sha256,
+            "is_active": bool(self.is_active),
+            "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None,
+        }
+
+    def __repr__(self):
+        return f"<PnlOverride {self.id} {self.slot} {self.source} active={self.is_active}>"
+
+
 class SimStack(db.Model):
     __tablename__ = "sugar_sim_stacks"
 

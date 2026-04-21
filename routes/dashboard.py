@@ -1,5 +1,7 @@
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+
+_SGT = timedelta(hours=8)
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response, jsonify, abort
 from sqlalchemy import cast, Date
 from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot, PnlSnapshotSchedule
@@ -10,6 +12,8 @@ from services.physical_pnl import compute_all_pnl_totals
 from services.price_source import get_price_source
 from services.snapshots import create_snapshot
 from services.schedule import is_due
+from services.var_summary import compute_var_summary
+from services.pnl_attribution import compute_attribution
 
 _DTE_WARN_DAYS = 10  # highlight DTE column when this close to expiry
 
@@ -45,6 +49,11 @@ def index():
     except Exception:
         exposure = None
 
+    try:
+        var_summary = compute_var_summary()
+    except Exception:
+        var_summary = None
+
     def _delta(snap):
         if not snap or not snap.data:
             return None
@@ -75,6 +84,13 @@ def index():
         except Exception: pass
 
     pnl_changes = {"daily": daily_delta, "weekly": weekly_delta, "monthly": monthly_delta}
+
+    pnl_attribution = None
+    if pnl_summary and daily_s:
+        try:
+            pnl_attribution = compute_attribution(daily_s, pnl_summary)
+        except Exception:
+            current_app.logger.exception("attribution render failed")
 
     # Upcoming expiries + next ICE holiday for the dashboard side panel.
     # DTE is measured from the latest trade date (falls back to today if missing).
@@ -146,6 +162,8 @@ def index():
         schedules=schedules,
         upcoming_rows=upcoming_rows,
         price_source=price_source,
+        var_summary=var_summary,
+        pnl_attribution=pnl_attribution,
     )
 
 
@@ -268,3 +286,56 @@ def snapshot_tick():
             current_app.logger.exception("Auto snapshot failed for %s", sched.slot)
             errors.append({"slot": sched.slot, "error": str(e)})
     return jsonify({"fired": fired, "skipped": skipped, "errors": errors})
+
+
+@dashboard_bp.route("/snapshot/<slot>/edit", methods=["POST"])
+def edit_snapshot(slot):
+    if slot not in ('daily', 'weekly', 'monthly'):
+        return jsonify({"error": "Invalid slot"}), 400
+    snap = db.session.get(PnlSnapshot, slot)
+    if snap is None:
+        return jsonify({"error": "No snapshot exists for this slot"}), 404
+    body = request.get_json(silent=True) or {}
+    FIELDS = [
+        "alpha_m2m", "alpha_pnl", "net_alpha_pnl",
+        "whites_physical_m2m", "whites_futures_m2m", "whites_pnl",
+        "raws_physical_m2m", "raws_futures_m2m", "ffa_m2m",
+        "net_raws_pnl", "total_pnl",
+    ]
+    updates = {}
+    errors = []
+    for f in FIELDS:
+        if f in body:
+            try:
+                updates[f] = float(body[f])
+            except (TypeError, ValueError):
+                errors.append(f)
+    if errors:
+        return jsonify({"error": f"Non-numeric values for: {errors}"}), 422
+
+    # as_of_date — stored as string in data JSON
+    if "as_of_date" in body:
+        try:
+            date.fromisoformat(str(body["as_of_date"]))
+            updates["as_of_date"] = str(body["as_of_date"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid as_of_date format, expected YYYY-MM-DD"}), 422
+
+    # snapshotted_at — sent as SGT datetime-local string, stored as UTC
+    new_snapshotted_at = None
+    if "snapshotted_at" in body:
+        try:
+            dt_sgt = datetime.fromisoformat(str(body["snapshotted_at"]))
+            new_snapshotted_at = dt_sgt - _SGT
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid snapshotted_at format"}), 422
+
+    if not updates and new_snapshotted_at is None:
+        return jsonify({"error": "No fields provided"}), 400
+
+    snap.data = {**snap.data, **updates}
+    if new_snapshotted_at is not None:
+        snap.snapshotted_at = new_snapshotted_at
+    snap.source = "edited"
+    db.session.commit()
+    return jsonify({"ok": True, "slot": slot})

@@ -62,15 +62,25 @@ def index():
         else:
             expiry_map[c] = futures_expiry.get(c)
 
-    # Auto-expire contracts whose expiry date has passed
+    # Auto-expire contracts whose expiry date has passed.
+    # For options, also zero Sett-1 / Delta-1 / IV-1 since the contract no longer trades.
     today = datetime.utcnow().date()
-    auto_expired = False
+    dirty = False
     for wc in watched:
         exp = expiry_map.get(wc.contract)
-        if exp and exp < today and not wc.expired:
+        if not (exp and exp < today):
+            continue
+        if not wc.expired:
             wc.expired = True
-            auto_expired = True
-    if auto_expired:
+            dirty = True
+        if _OPTION_RE.match(wc.contract):
+            mp = price_map.get(wc.contract)
+            if mp and (mp.settlement or mp.delta or mp.iv):
+                mp.settlement = 0.0
+                mp.delta = 0.0
+                mp.iv = 0.0
+                dirty = True
+    if dirty:
         db.session.commit()
 
     # Pricing date: read the actual settlement date stored from last fetch

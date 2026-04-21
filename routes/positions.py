@@ -461,18 +461,6 @@ def api_update():
         return jsonify({"error": str(e)}), 500
 
 
-@positions_bp.route("/positions/clear-all", methods=["POST"])
-def clear_all():
-    try:
-        deleted = TradePosition.query.delete()
-        db.session.commit()
-        flash(f"Cleared {deleted} trade(s). You can now re-sync from Salesforce.", "success")
-    except Exception as e:
-        db.session.rollback()
-        flash(f"Failed to clear trades: {e}", "danger")
-    return redirect(url_for("positions.index"))
-
-
 @positions_bp.route("/positions/delete/<sf_id>", methods=["POST"])
 def delete(sf_id):
     pos = TradePosition.query.filter_by(sf_id=sf_id).first_or_404()

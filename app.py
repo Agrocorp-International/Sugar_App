@@ -119,6 +119,10 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS source VARCHAR(10), "
             "ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMP"
         ))
+        db.session.execute(text(
+            "ALTER TABLE sugar_pnl_overrides "
+            "ADD COLUMN IF NOT EXISTS slot VARCHAR(10) NOT NULL DEFAULT 'current'"
+        ))
         db.session.commit()
 
     return app
