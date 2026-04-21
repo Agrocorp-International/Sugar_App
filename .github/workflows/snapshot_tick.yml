@@ -14,7 +14,7 @@ concurrency:
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
       - name: POST /sugar/snapshot/tick
         run: |
@@ -25,7 +25,7 @@ jobs:
             -w "%{http_code}" \
             -X POST \
             -H "X-Cron-Key: ${{ secrets.SNAPSHOT_CRON_KEY }}" \
-            -m 30 \
+            -m 180 \
             https://sugar-cotton-pnl-g9hsasb3bnfjbmat.southeastasia-01.azurewebsites.net/sugar/snapshot/tick)
 
           echo "HTTP status: $status"
