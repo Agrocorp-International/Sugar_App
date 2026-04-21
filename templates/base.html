@@ -189,6 +189,49 @@
         padding-top: .4rem;
       }
     }
+
+    /* ── Excel-style multi-select filter (shared by /positions, /summary, /cotton/positions) ── */
+    .mf { position: relative; display: inline-block; }
+    .mf-toggle {
+      display: inline-flex; align-items: center; gap: 4px;
+      min-width: 80px; max-width: 220px;
+      cursor: pointer; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .mf-toggle .mf-caret { margin-left: auto; color: #6b7280; font-size: 10px; }
+    .mf-panel {
+      position: absolute; top: calc(100% + 2px); left: 0; z-index: 1000;
+      background: #fff; border: 1px solid #d1d5db; border-radius: 6px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.12);
+      min-width: 200px; max-width: 320px;
+      padding: 6px;
+    }
+    .mf-search-row { padding: 2px 2px 4px 2px; }
+    .mf-search {
+      width: 100%; height: 26px; font-size: 12px;
+      border: 1px solid #d1d5db; border-radius: 4px;
+      padding: 2px 6px; outline: none;
+    }
+    .mf-search:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+    .mf-list {
+      max-height: 240px; overflow-y: auto; overflow-x: hidden;
+      border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 2px;
+    }
+    .mf-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 6px; border-radius: 3px;
+      font-size: 12px; font-weight: 400; color: #374151;
+      cursor: pointer; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 0;
+    }
+    .mf-row:hover { background: #f3f4f6; }
+    .mf-row input[type="checkbox"] {
+      margin: 0; width: 13px; height: 13px; accent-color: #2563eb;
+      flex-shrink: 0;
+    }
+    .mf-all-row { font-weight: 600; color: #1f2937; }
+    .mf-row.mf-hidden { display: none; }
   </style>
 </head>
 <body>
@@ -372,5 +415,102 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Excel-style multi-select filter: open/close, search, (Select All),
+    // and close-on-outside-click. Checkboxes carry the form field name so
+    // submission posts repeated query params (Flask: request.args.getlist).
+    (function () {
+      function init(mf) {
+        if (mf.dataset.mfInit) return;
+        mf.dataset.mfInit = '1';
+
+        const toggle   = mf.querySelector('.mf-toggle');
+        const panel    = mf.querySelector('.mf-panel');
+        const search   = mf.querySelector('.mf-search');
+        const selectAll= mf.querySelector('.mf-select-all');
+        const rows     = Array.from(mf.querySelectorAll('.mf-opt-row'));
+        const boxes    = rows.map(r => r.querySelector('input[type="checkbox"]'));
+
+        function syncSelectAllState() {
+          const visibleBoxes = rows
+            .filter(r => !r.classList.contains('mf-hidden'))
+            .map(r => r.querySelector('input[type="checkbox"]'));
+          if (visibleBoxes.length === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+            return;
+          }
+          const checkedCount = visibleBoxes.filter(b => b.checked).length;
+          selectAll.checked = checkedCount === visibleBoxes.length;
+          selectAll.indeterminate = checkedCount > 0 && checkedCount < visibleBoxes.length;
+        }
+
+        toggle.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const isHidden = panel.hasAttribute('hidden');
+          // Close any other open panels first.
+          document.querySelectorAll('.mf-panel:not([hidden])').forEach(p => {
+            if (p !== panel) p.setAttribute('hidden', '');
+          });
+          if (isHidden) {
+            panel.removeAttribute('hidden');
+            syncSelectAllState();
+            // Focus the search box for quick typing.
+            setTimeout(() => search && search.focus(), 0);
+          } else {
+            panel.setAttribute('hidden', '');
+          }
+        });
+
+        // Don't close the panel when clicking inside it.
+        panel.addEventListener('click', e => e.stopPropagation());
+
+        // Search filters the visible rows.
+        if (search) {
+          search.addEventListener('input', function () {
+            const q = search.value.trim().toLowerCase();
+            rows.forEach(function (r) {
+              const label = r.textContent.trim().toLowerCase();
+              if (!q || label.indexOf(q) !== -1) {
+                r.classList.remove('mf-hidden');
+              } else {
+                r.classList.add('mf-hidden');
+              }
+            });
+            syncSelectAllState();
+          });
+        }
+
+        // (Select All) ticks/unticks every currently-visible option.
+        selectAll.addEventListener('change', function () {
+          const visibleBoxes = rows
+            .filter(r => !r.classList.contains('mf-hidden'))
+            .map(r => r.querySelector('input[type="checkbox"]'));
+          visibleBoxes.forEach(b => { b.checked = selectAll.checked; });
+        });
+
+        // Individual box changes update (Select All) state.
+        boxes.forEach(b => b.addEventListener('change', syncSelectAllState));
+      }
+
+      function closeAll(e) {
+        document.querySelectorAll('.mf-panel:not([hidden])').forEach(function (p) {
+          if (!p.parentElement.contains(e.target)) {
+            p.setAttribute('hidden', '');
+          }
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.mf').forEach(init);
+      });
+      document.addEventListener('click', closeAll);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.mf-panel:not([hidden])').forEach(p => p.setAttribute('hidden', ''));
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

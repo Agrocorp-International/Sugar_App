@@ -1,0 +1,60 @@
+{#
+  Excel-style multi-select filter.
+
+  Renders a button that opens a panel with a search box, (Select All) toggle,
+  and a scrollable checkbox list. Checkbox names match the form field name,
+  so native form submission posts repeated query params that Flask reads with
+  request.args.getlist(name).
+
+  Args:
+    name         : form field name, e.g. "contract_filter"
+    label        : display label, e.g. "Contract"
+    options      : iterable of option values (strings or numbers)
+    selected     : list of currently-selected values (strings)
+    allow_empty  : if true, add a checkbox with value="__empty__" so users
+                   can filter for rows where the field is NULL/blank
+#}
+{% macro multi_filter(name, label, options, selected, allow_empty=False) %}
+  {# Normalize selected to a set of strings for fast membership checks. #}
+  {% set sel_set = selected | map('string') | list %}
+  {% set sel_count = sel_set | length %}
+  <div class="mf" data-mf-name="{{ name }}">
+    <button type="button" class="filter-ctrl mf-toggle">
+      {%- if sel_count == 0 -%}
+        {{ label }}
+      {%- elif sel_count == 1 -%}
+        {% set one = sel_set[0] %}
+        {{ label }}: {{ '(Empty)' if one == '__empty__' else one }}
+      {%- else -%}
+        {{ label }} ({{ sel_count }})
+      {%- endif -%}
+      <span class="mf-caret">▾</span>
+    </button>
+    <div class="mf-panel" hidden>
+      <div class="mf-search-row">
+        <input type="text" class="mf-search" placeholder="Search…" autocomplete="off">
+      </div>
+      <label class="mf-row mf-all-row">
+        <input type="checkbox" class="mf-select-all">
+        <span>(Select All)</span>
+      </label>
+      <div class="mf-list">
+        {% for opt in options %}
+          {% set v = opt | string %}
+          <label class="mf-row mf-opt-row">
+            <input type="checkbox" name="{{ name }}" value="{{ v }}"
+                   {% if v in sel_set %}checked{% endif %}>
+            <span>{{ v }}</span>
+          </label>
+        {% endfor %}
+        {% if allow_empty %}
+          <label class="mf-row mf-opt-row">
+            <input type="checkbox" name="{{ name }}" value="__empty__"
+                   {% if '__empty__' in sel_set %}checked{% endif %}>
+            <span><em>(Empty)</em></span>
+          </label>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endmacro %}

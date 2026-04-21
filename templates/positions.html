@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros/multi_filter.html" import multi_filter %}
 {% block title %}FUTS Trades - Sugar Trading{% endblock %}
 
 {% block content %}
@@ -170,63 +171,20 @@
   </div>
 </div>
 
-{% set active_count = [date_filter, contract_filter, price_filter, book_filter, status_filter, put_call_filter, strike_filter, instrument_filter, spread_filter, contract_xl_filter, trade_id_filter]|select|list|length %}
+{% set active_count = (contract_filter|length + book_filter|length + status_filter|length + put_call_filter|length + strike_filter|length + instrument_filter|length + spread_filter|length + trade_id_filter|length)
+  + (1 if date_filter else 0) + (1 if price_filter else 0) + (1 if contract_xl_filter else 0) %}
 <form method="GET" action="{{ url_for('positions.index') }}" class="filter-bar">
   <input type="date" name="date_filter" value="{{ date_filter }}" class="filter-ctrl" title="Trade Date">
-  <select name="contract_filter" class="filter-ctrl">
-    <option value="">Contract</option>
-    {% for c in contract_options %}
-      <option value="{{ c }}" {% if contract_filter == c %}selected{% endif %}>{{ c }}</option>
-    {% endfor %}
-  </select>
+  {{ multi_filter('contract_filter', 'Contract', contract_options, contract_filter) }}
   <input type="number" name="price_filter" value="{{ price_filter }}" placeholder="Price..." step="any" class="filter-ctrl">
-  <select name="book_filter" class="filter-ctrl">
-    <option value="">Book</option>
-    {% for book in book_options %}
-      <option value="{{ book }}" {% if book_filter == book %}selected{% endif %}>{{ book }}</option>
-    {% endfor %}
-    <option value="__empty__" {% if book_filter == '__empty__' %}selected{% endif %}>Empty</option>
-  </select>
-  <select name="status_filter" class="filter-ctrl">
-    <option value="">Status</option>
-    {% for s in status_options %}
-      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-  </select>
-  <select name="put_call_filter" class="filter-ctrl">
-    <option value="">P/C</option>
-    {% for pc in put_call_options %}
-      <option value="{{ pc }}" {% if put_call_filter == pc %}selected{% endif %}>{{ pc }}</option>
-    {% endfor %}
-    <option value="__empty__" {% if put_call_filter == '__empty__' %}selected{% endif %}>Empty</option>
-  </select>
-  <select name="strike_filter" class="filter-ctrl">
-    <option value="">Strike</option>
-    {% for s in strike_options %}
-      <option value="{{ s }}" {% if strike_filter == s|string %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-  </select>
-  <select name="instrument_filter" class="filter-ctrl">
-    <option value="">Instrument</option>
-    {% for inst in instrument_options %}
-      <option value="{{ inst }}" {% if instrument_filter == inst %}selected{% endif %}>{{ inst }}</option>
-    {% endfor %}
-    <option value="__empty__" {% if instrument_filter == '__empty__' %}selected{% endif %}>Empty</option>
-  </select>
-  <select name="spread_filter" class="filter-ctrl">
-    <option value="">Spread</option>
-    {% for s in spread_options %}
-      <option value="{{ s }}" {% if spread_filter == s %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-    <option value="__empty__" {% if spread_filter == '__empty__' %}selected{% endif %}>Empty</option>
-  </select>
+  {{ multi_filter('book_filter', 'Book', book_options, book_filter, allow_empty=True) }}
+  {{ multi_filter('status_filter', 'Status', status_options, status_filter) }}
+  {{ multi_filter('put_call_filter', 'P/C', put_call_options, put_call_filter, allow_empty=True) }}
+  {{ multi_filter('strike_filter', 'Strike', strike_options, strike_filter) }}
+  {{ multi_filter('instrument_filter', 'Instrument', instrument_options, instrument_filter, allow_empty=True) }}
+  {{ multi_filter('spread_filter', 'Spread', spread_options, spread_filter, allow_empty=True) }}
   <input type="text" name="contract_xl_filter" class="filter-ctrl" value="{{ contract_xl_filter }}" placeholder="XL Ref...">
-  <select name="trade_id_filter" class="filter-ctrl">
-    <option value="">Trade ID</option>
-    {% for tid in trade_id_options %}
-      <option value="{{ tid }}" {% if trade_id_filter == tid %}selected{% endif %}>{{ tid }}</option>
-    {% endfor %}
-  </select>
+  {{ multi_filter('trade_id_filter', 'Trade ID', trade_id_options, trade_id_filter) }}
   <button type="submit" class="filter-apply">Apply</button>
   {% if active_count > 0 %}
     <a href="{{ url_for('positions.index') }}" class="filter-clear">Clear ({{ active_count }})</a>

@@ -1,27 +1,35 @@
 import logging
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from models.db import db
 
 log = logging.getLogger(__name__)
 
-VAR_IDENTIFIER = "Pratik_ICE Raw Sugar"
+VAR_IDENTIFIERS = ("Pratik_Sugar",)
 
 # public.daily_var."case" is stored as Postgres real.
 # Match by nearest-value because real has ~7-digit precision drift.
 _CASE_LABELS = ((95.0, "95%"), (99.0, "99%"), (100.0, "Worst Case"))
 
+# Sum per (case, var_date) BEFORE ranking so each displayed row
+# corresponds to a single date — the two identifiers may publish on
+# different days and we don't want to mix dates in one sum.
 _VAR_SQL = text("""
-    WITH ranked AS (
+    WITH combined AS (
+        SELECT "case", var_date, SUM(value_change) AS value_change
+        FROM public.daily_var
+        WHERE identifier IN :identifiers
+        GROUP BY "case", var_date
+    ),
+    ranked AS (
         SELECT "case", value_change, var_date,
                ROW_NUMBER() OVER (PARTITION BY "case" ORDER BY var_date DESC) AS rn
-        FROM public.daily_var
-        WHERE identifier = :identifier
+        FROM combined
     )
     SELECT "case" AS case_val, value_change, var_date, rn
     FROM ranked
     WHERE rn <= 2
     ORDER BY "case", rn
-""")
+""").bindparams(bindparam("identifiers", expanding=True))
 
 
 def _label_for(case_val):
@@ -39,7 +47,7 @@ def compute_var_summary():
     }
     try:
         rows = db.session.execute(
-            _VAR_SQL, {"identifier": VAR_IDENTIFIER}
+            _VAR_SQL, {"identifiers": list(VAR_IDENTIFIERS)}
         ).fetchall()
     except Exception:
         log.exception("compute_var_summary failed")

@@ -292,7 +292,7 @@
 {% macro fmt_neg(v) %}{% if v is none %}<span class="dash-mute">—</span>{% else %}<span class="dash-neg">-${{ "{:,.0f}".format(v|abs) }}</span>{% endif %}{% endmacro %}
 {% macro fmt_change(y, p) %}{% if y is none or p is none %}<span class="dash-mute">—</span>{% else %}{% set d = y - p %}{% if d > 0 %}<span class="dash-pos">+${{ "{:,.0f}".format(d) }}</span>{% elif d < 0 %}<span class="dash-neg">-${{ "{:,.0f}".format(d|abs) }}</span>{% else %}<span class="dash-mute">$0</span>{% endif %}{% endif %}{% endmacro %}
 <div class="dash-var-card dash-bot-card card p-4">
-  <div class="dash-bot-title mb-2">Value at Risk — ICE Raw Sugar</div>
+  <div class="dash-bot-title mb-2">Value at Risk — Sugar</div>
   <table class="dash-clean-table dash-var-table">
     <thead>
       <tr>

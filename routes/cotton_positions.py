@@ -1,9 +1,14 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
-from sqlalchemy import cast, Date
+from sqlalchemy import cast, Date, or_
 from models.db import db
 from models.cotton import CottonTradePosition, CottonMarketPrice
 
 cotton_positions_bp = Blueprint("cotton_positions", __name__)
+
+
+def _multi_arg(name):
+    """Read a multi-value query param and strip blanks."""
+    return [v.strip() for v in request.args.getlist(name) if v.strip()]
 
 PAGE_SIZE = 40
 
@@ -87,17 +92,17 @@ def index():
     price_source = get_price_source()
     page = request.args.get("page", 1, type=int)
     date_filter        = request.args.get("date_filter", "").strip()
-    contract_filter    = request.args.get("contract_filter", "").strip()
     price_filter       = request.args.get("price_filter", "").strip()
-    book_filter        = request.args.get("book_filter", "").strip()
-    region_filter      = request.args.get("region_filter", "").strip()
-    put_call_filter    = request.args.get("put_call_filter", "").strip()
-    strike_filter      = request.args.get("strike_filter", "").strip()
-    instrument_filter  = request.args.get("instrument_filter", "").strip()
-    spread_filter      = request.args.get("spread_filter", "").strip()
-    status_filter      = request.args.get("status_filter", "").strip()
     contract_xl_filter = request.args.get("contract_xl_filter", "").strip()
-    trade_id_filter    = request.args.get("trade_id_filter", "").strip()
+    contract_filter    = _multi_arg("contract_filter")
+    book_filter        = _multi_arg("book_filter")
+    region_filter      = _multi_arg("region_filter")
+    put_call_filter    = _multi_arg("put_call_filter")
+    strike_filter      = _multi_arg("strike_filter")
+    instrument_filter  = _multi_arg("instrument_filter")
+    spread_filter      = _multi_arg("spread_filter")
+    status_filter      = _multi_arg("status_filter")
+    trade_id_filter    = _multi_arg("trade_id_filter")
 
     query = CottonTradePosition.query.order_by(
         cast(CottonTradePosition.data["Trade_Date__c"].as_string(), Date).desc()
@@ -108,7 +113,7 @@ def index():
         )
     if contract_filter:
         query = query.filter(
-            CottonTradePosition.data["Contract__c"].as_string().ilike(f"%{contract_filter}%")
+            CottonTradePosition.data["Contract__c"].as_string().in_(contract_filter)
         )
     if price_filter:
         try:
@@ -117,55 +122,65 @@ def index():
         except ValueError:
             pass
     if book_filter:
-        if book_filter == "__empty__":
-            query = query.filter(
-                sa_text("(data->>'Book__c' IS NULL OR data->>'Book__c' = '')")
-            )
-        else:
-            query = query.filter(
-                CottonTradePosition.data["Book__c"].as_string().ilike(f"%{book_filter}%")
-            )
+        exact = [v for v in book_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(CottonTradePosition.data["Book__c"].as_string().in_(exact))
+        if "__empty__" in book_filter:
+            clauses.append(sa_text("(data->>'Book__c' IS NULL OR data->>'Book__c' = '')"))
+        query = query.filter(or_(*clauses))
     if region_filter:
-        if region_filter == "__empty__":
-            query = query.filter(CottonTradePosition.region == None)
-        else:
-            query = query.filter(CottonTradePosition.region == region_filter)
+        exact = [v for v in region_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(CottonTradePosition.region.in_(exact))
+        if "__empty__" in region_filter:
+            clauses.append(CottonTradePosition.region == None)
+        query = query.filter(or_(*clauses))
     if put_call_filter:
-        if put_call_filter == "__empty__":
-            query = query.filter(
-                sa_text("(data->>'Put_Call_2__c' IS NULL OR data->>'Put_Call_2__c' = '')")
-            )
-        else:
-            query = query.filter(
-                CottonTradePosition.data["Put_Call_2__c"].as_string() == put_call_filter
-            )
+        exact = [v for v in put_call_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(CottonTradePosition.data["Put_Call_2__c"].as_string().in_(exact))
+        if "__empty__" in put_call_filter:
+            clauses.append(sa_text("(data->>'Put_Call_2__c' IS NULL OR data->>'Put_Call_2__c' = '')"))
+        query = query.filter(or_(*clauses))
     if strike_filter:
-        try:
-            strike_val = float(strike_filter)
+        strike_vals = []
+        for v in strike_filter:
+            try:
+                strike_vals.append(float(v))
+            except ValueError:
+                pass
+        if strike_vals:
             query = query.filter(
-                CottonTradePosition.data["Strike__c"].as_float() == strike_val
+                CottonTradePosition.data["Strike__c"].as_float().in_(strike_vals)
             )
-        except ValueError:
-            pass
     if instrument_filter:
-        if instrument_filter == "__empty__":
-            query = query.filter(CottonTradePosition.instrument == None)
-        else:
-            query = query.filter(CottonTradePosition.instrument == instrument_filter)
+        exact = [v for v in instrument_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(CottonTradePosition.instrument.in_(exact))
+        if "__empty__" in instrument_filter:
+            clauses.append(CottonTradePosition.instrument == None)
+        query = query.filter(or_(*clauses))
     if spread_filter:
-        if spread_filter == "__empty__":
-            query = query.filter(CottonTradePosition.spread == None)
-        else:
-            query = query.filter(CottonTradePosition.spread == spread_filter)
+        exact = [v for v in spread_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(CottonTradePosition.spread.in_(exact))
+        if "__empty__" in spread_filter:
+            clauses.append(CottonTradePosition.spread == None)
+        query = query.filter(or_(*clauses))
     if status_filter:
         query = query.filter(
-            CottonTradePosition.data["Realised__c"].as_string() == status_filter
+            CottonTradePosition.data["Realised__c"].as_string().in_(status_filter)
         )
     if contract_xl_filter:
         query = query.filter(CottonTradePosition.contract_xl.ilike(f"%{contract_xl_filter}%"))
     if trade_id_filter:
         query = query.filter(
-            CottonTradePosition.data["Trade_Key__c"].as_string() == trade_id_filter
+            CottonTradePosition.data["Trade_Key__c"].as_string().in_(trade_id_filter)
         )
 
     # Totals across filtered rows

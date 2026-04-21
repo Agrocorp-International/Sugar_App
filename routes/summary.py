@@ -39,17 +39,20 @@ def index():
     statuses = sorted({pos.data.get('Realised__c') or '' for pos in all_positions} - {''})
     trade_codes = sorted({pos.data.get('Trade_Code__c') or '' for pos in all_positions} - {''})
 
-    selected_book = request.args.get('book', '')
-    selected_status = request.args.get('status', '')
-    selected_book_pivot = request.args.get('book_pivot', '')
-    selected_status_pivot = request.args.get('status_pivot', '')
-    selected_book_trader = request.args.get('book_trader', '')
-    selected_status_trader = request.args.get('status_trader', '')
-    selected_tradecode_trader = request.args.get('tradecode_trader', '')
-    selected_book_spread = request.args.get('book_spread', '')
-    selected_status_spread = request.args.get('status_spread', '')
-    selected_book_openst1 = request.args.get('book_openst1', '')
-    selected_tradecode_openst1 = request.args.get('tradecode_openst1', '')
+    def _multi(name):
+        return [v.strip() for v in request.args.getlist(name) if v.strip()]
+
+    selected_book = _multi('book')
+    selected_status = _multi('status')
+    selected_book_pivot = _multi('book_pivot')
+    selected_status_pivot = _multi('status_pivot')
+    selected_book_trader = _multi('book_trader')
+    selected_status_trader = _multi('status_trader')
+    selected_tradecode_trader = _multi('tradecode_trader')
+    selected_book_spread = _multi('book_spread')
+    selected_status_spread = _multi('status_spread')
+    selected_book_openst1 = _multi('book_openst1')
+    selected_tradecode_openst1 = _multi('tradecode_openst1')
     active_tab = request.args.get('tab', 'contract')
 
     # ── By Contract ──────────────────────────────────────────────────────
@@ -60,9 +63,9 @@ def index():
     delta_map = {}
 
     for pos in all_positions:
-        if selected_book and pos.data.get('Book__c') != selected_book:
+        if selected_book and pos.data.get('Book__c') not in selected_book:
             continue
-        if selected_status and pos.data.get('Realised__c') != selected_status:
+        if selected_status and pos.data.get('Realised__c') not in selected_status:
             continue
 
         key = build_contract_key(pos.data)
@@ -117,9 +120,9 @@ def index():
     strat_commission = defaultdict(float)
 
     for pos in all_positions:
-        if selected_book and pos.data.get('Book__c') != selected_book:
+        if selected_book and pos.data.get('Book__c') not in selected_book:
             continue
-        if selected_status and pos.data.get('Realised__c') != selected_status:
+        if selected_status and pos.data.get('Realised__c') not in selected_status:
             continue
 
         spread_contract = (pos.spread or '').strip()
@@ -193,9 +196,9 @@ def index():
     grp_settlement = {}
 
     for pos in all_positions:
-        if selected_book_pivot and pos.data.get('Book__c') != selected_book_pivot:
+        if selected_book_pivot and pos.data.get('Book__c') not in selected_book_pivot:
             continue
-        if selected_status_pivot and pos.data.get('Realised__c') != selected_status_pivot:
+        if selected_status_pivot and pos.data.get('Realised__c') not in selected_status_pivot:
             continue
 
         contract_key = build_contract_key(pos.data)
@@ -330,11 +333,11 @@ def index():
     tdr_delta = {}
 
     for pos in all_positions:
-        if selected_book_trader and pos.data.get('Book__c') != selected_book_trader:
+        if selected_book_trader and pos.data.get('Book__c') not in selected_book_trader:
             continue
-        if selected_status_trader and pos.data.get('Realised__c') != selected_status_trader:
+        if selected_status_trader and pos.data.get('Realised__c') not in selected_status_trader:
             continue
-        if selected_tradecode_trader and pos.data.get('Trade_Code__c') != selected_tradecode_trader:
+        if selected_tradecode_trader and pos.data.get('Trade_Code__c') not in selected_tradecode_trader:
             continue
 
         trader = pos.data.get('Trader__c') or ''
@@ -450,9 +453,9 @@ def index():
     sprd_sett_x_lots = defaultdict(float)
 
     for pos in all_positions:
-        if selected_book_spread and pos.data.get('Book__c') != selected_book_spread:
+        if selected_book_spread and pos.data.get('Book__c') not in selected_book_spread:
             continue
-        if selected_status_spread and pos.data.get('Realised__c') != selected_status_spread:
+        if selected_status_spread and pos.data.get('Realised__c') not in selected_status_spread:
             continue
 
         spread = (pos.spread or '').strip()
@@ -601,9 +604,9 @@ def index():
     o_settlement = {}
 
     for pos in all_positions:
-        if selected_book_openst1 and pos.data.get('Book__c') != selected_book_openst1:
+        if selected_book_openst1 and pos.data.get('Book__c') not in selected_book_openst1:
             continue
-        if selected_tradecode_openst1 and pos.data.get('Trade_Code__c') != selected_tradecode_openst1:
+        if selected_tradecode_openst1 and pos.data.get('Trade_Code__c') not in selected_tradecode_openst1:
             continue
 
         contract_key = build_contract_key(pos.data)

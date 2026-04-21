@@ -1,7 +1,34 @@
 {% extends "base.html" %}
+{% from "_macros/multi_filter.html" import multi_filter %}
 {% block title %}Summary - Sugar Trading{% endblock %}
 
 {% block content %}
+
+{# Helper macro: preserve multi-value params across tab form submissions. #}
+{% macro hidden_multi(name, values) %}
+  {% for v in values %}<input type="hidden" name="{{ name }}" value="{{ v }}">{% endfor %}
+{% endmacro %}
+
+{# Build a query-string of all OTHER tabs' filters for the "Clear" link on a given tab. #}
+{% macro clear_qs(except_names) %}
+  {% set pairs = [] %}
+  {% set all_filters = [
+    ('book', selected_book),
+    ('status', selected_status),
+    ('book_pivot', selected_book_pivot),
+    ('status_pivot', selected_status_pivot),
+    ('book_trader', selected_book_trader),
+    ('status_trader', selected_status_trader),
+    ('tradecode_trader', selected_tradecode_trader),
+    ('book_spread', selected_book_spread),
+    ('status_spread', selected_status_spread),
+    ('book_openst1', selected_book_openst1),
+    ('tradecode_openst1', selected_tradecode_openst1),
+  ] %}
+  {% for k, vs in all_filters if k not in except_names %}
+    {% for v in vs %}{{ '&' }}{{ k }}={{ v|urlencode }}{% endfor %}
+  {% endfor %}
+{% endmacro %}
 <style>
   /* ── Trading Dashboard Table ────────────────────────────────────── */
   .excel-table {
@@ -234,31 +261,23 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="tab-pane {% if active_tab not in ['pivot', 'trader', 'spread', 'openst1'] %}show active{% endif %}" id="tab-contract" role="tabpanel">
     <form method="GET" class="mb-3">
       <input type="hidden" name="tab" value="contract">
-      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
-      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
-      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
-      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
-      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
-      <input type="hidden" name="book_openst1" value="{{ selected_book_openst1 }}">
-      <input type="hidden" name="tradecode_openst1" value="{{ selected_tradecode_openst1 }}">
+      {{ hidden_multi('book_pivot', selected_book_pivot) }}
+      {{ hidden_multi('status_pivot', selected_status_pivot) }}
+      {{ hidden_multi('book_trader', selected_book_trader) }}
+      {{ hidden_multi('status_trader', selected_status_trader) }}
+      {{ hidden_multi('tradecode_trader', selected_tradecode_trader) }}
+      {{ hidden_multi('book_spread', selected_book_spread) }}
+      {{ hidden_multi('status_spread', selected_status_spread) }}
+      {{ hidden_multi('book_openst1', selected_book_openst1) }}
+      {{ hidden_multi('tradecode_openst1', selected_tradecode_openst1) }}
       <div class="filter-bar">
         <label>Book</label>
-        <select name="book" class="filter-ctrl">
-          <option value="">All Books</option>
-          {% for b in books %}
-            <option value="{{ b }}" {% if b == selected_book %}selected{% endif %}>{{ b }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('book', 'All Books', books, selected_book) }}
         <label>Status</label>
-        <select name="status" class="filter-ctrl">
-          <option value="">All Statuses</option>
-          {% for s in statuses %}
-            <option value="{{ s }}" {% if s == selected_status %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('status', 'All Statuses', statuses, selected_status) }}
         <button type="submit" class="filter-apply">Filter</button>
         {% if selected_book or selected_status %}
-          <a href="{{ url_for('summary.index') }}?tab=contract&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}" class="filter-clear">Clear</a>
+          <a href="{{ url_for('summary.index') }}?tab=contract{{ clear_qs(['book', 'status']) }}" class="filter-clear">Clear</a>
         {% endif %}
       </div>
     </form>
@@ -434,31 +453,23 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="tab-pane {% if active_tab == 'pivot' %}show active{% endif %}" id="tab-pivot" role="tabpanel">
     <form method="GET" class="mb-3">
       <input type="hidden" name="tab" value="pivot">
-      <input type="hidden" name="book" value="{{ selected_book }}">
-      <input type="hidden" name="status" value="{{ selected_status }}">
-      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
-      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
-      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
-      <input type="hidden" name="book_openst1" value="{{ selected_book_openst1 }}">
-      <input type="hidden" name="tradecode_openst1" value="{{ selected_tradecode_openst1 }}">
+      {{ hidden_multi('book', selected_book) }}
+      {{ hidden_multi('status', selected_status) }}
+      {{ hidden_multi('book_trader', selected_book_trader) }}
+      {{ hidden_multi('status_trader', selected_status_trader) }}
+      {{ hidden_multi('tradecode_trader', selected_tradecode_trader) }}
+      {{ hidden_multi('book_spread', selected_book_spread) }}
+      {{ hidden_multi('status_spread', selected_status_spread) }}
+      {{ hidden_multi('book_openst1', selected_book_openst1) }}
+      {{ hidden_multi('tradecode_openst1', selected_tradecode_openst1) }}
       <div class="filter-bar">
         <label>Book</label>
-        <select name="book_pivot" class="filter-ctrl">
-          <option value="">All Books</option>
-          {% for b in books %}
-            <option value="{{ b }}" {% if b == selected_book_pivot %}selected{% endif %}>{{ b }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('book_pivot', 'All Books', books, selected_book_pivot) }}
         <label>Status</label>
-        <select name="status_pivot" class="filter-ctrl">
-          <option value="">All Statuses</option>
-          {% for s in statuses %}
-            <option value="{{ s }}" {% if s == selected_status_pivot %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('status_pivot', 'All Statuses', statuses, selected_status_pivot) }}
         <button type="submit" class="filter-apply">Filter</button>
         {% if selected_book_pivot or selected_status_pivot %}
-          <a href="{{ url_for('summary.index') }}?tab=pivot&book={{ selected_book }}&status={{ selected_status }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}" class="filter-clear">Clear</a>
+          <a href="{{ url_for('summary.index') }}?tab=pivot{{ clear_qs(['book_pivot', 'status_pivot']) }}" class="filter-clear">Clear</a>
         {% endif %}
       </div>
     </form>
@@ -584,37 +595,24 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="tab-pane {% if active_tab == 'trader' %}show active{% endif %}" id="tab-trader" role="tabpanel">
     <form method="GET" class="mb-3">
       <input type="hidden" name="tab" value="trader">
-      <input type="hidden" name="book" value="{{ selected_book }}">
-      <input type="hidden" name="status" value="{{ selected_status }}">
-      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
-      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
-      <input type="hidden" name="book_openst1" value="{{ selected_book_openst1 }}">
-      <input type="hidden" name="tradecode_openst1" value="{{ selected_tradecode_openst1 }}">
+      {{ hidden_multi('book', selected_book) }}
+      {{ hidden_multi('status', selected_status) }}
+      {{ hidden_multi('book_pivot', selected_book_pivot) }}
+      {{ hidden_multi('status_pivot', selected_status_pivot) }}
+      {{ hidden_multi('book_spread', selected_book_spread) }}
+      {{ hidden_multi('status_spread', selected_status_spread) }}
+      {{ hidden_multi('book_openst1', selected_book_openst1) }}
+      {{ hidden_multi('tradecode_openst1', selected_tradecode_openst1) }}
       <div class="filter-bar">
         <label>Book</label>
-        <select name="book_trader" class="filter-ctrl">
-          <option value="">All Books</option>
-          {% for b in books %}
-            <option value="{{ b }}" {% if b == selected_book_trader %}selected{% endif %}>{{ b }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('book_trader', 'All Books', books, selected_book_trader) }}
         <label>Status</label>
-        <select name="status_trader" class="filter-ctrl">
-          <option value="">All Statuses</option>
-          {% for s in statuses %}
-            <option value="{{ s }}" {% if s == selected_status_trader %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('status_trader', 'All Statuses', statuses, selected_status_trader) }}
         <label>Trade Code</label>
-        <select name="tradecode_trader" class="filter-ctrl">
-          <option value="">All Trade Codes</option>
-          {% for tc in trade_codes %}
-            <option value="{{ tc }}" {% if tc == selected_tradecode_trader %}selected{% endif %}>{{ tc }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('tradecode_trader', 'All Trade Codes', trade_codes, selected_tradecode_trader) }}
         <button type="submit" class="filter-apply">Filter</button>
         {% if selected_book_trader or selected_status_trader or selected_tradecode_trader %}
-          <a href="{{ url_for('summary.index') }}?tab=trader&book={{ selected_book }}&status={{ selected_status }}&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}" class="filter-clear">Clear</a>
+          <a href="{{ url_for('summary.index') }}?tab=trader{{ clear_qs(['book_trader', 'status_trader', 'tradecode_trader']) }}" class="filter-clear">Clear</a>
         {% endif %}
       </div>
     </form>
@@ -728,33 +726,23 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="tab-pane {% if active_tab == 'spread' %}show active{% endif %}" id="tab-spread" role="tabpanel">
     <form method="GET" class="mb-3">
       <input type="hidden" name="tab" value="spread">
-      <input type="hidden" name="book" value="{{ selected_book }}">
-      <input type="hidden" name="status" value="{{ selected_status }}">
-      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
-      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
-      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
-      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
-      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
-      <input type="hidden" name="book_openst1" value="{{ selected_book_openst1 }}">
-      <input type="hidden" name="tradecode_openst1" value="{{ selected_tradecode_openst1 }}">
+      {{ hidden_multi('book', selected_book) }}
+      {{ hidden_multi('status', selected_status) }}
+      {{ hidden_multi('book_pivot', selected_book_pivot) }}
+      {{ hidden_multi('status_pivot', selected_status_pivot) }}
+      {{ hidden_multi('book_trader', selected_book_trader) }}
+      {{ hidden_multi('status_trader', selected_status_trader) }}
+      {{ hidden_multi('tradecode_trader', selected_tradecode_trader) }}
+      {{ hidden_multi('book_openst1', selected_book_openst1) }}
+      {{ hidden_multi('tradecode_openst1', selected_tradecode_openst1) }}
       <div class="filter-bar">
         <label>Book</label>
-        <select name="book_spread" class="filter-ctrl">
-          <option value="">All Books</option>
-          {% for b in books %}
-            <option value="{{ b }}" {% if b == selected_book_spread %}selected{% endif %}>{{ b }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('book_spread', 'All Books', books, selected_book_spread) }}
         <label>Status</label>
-        <select name="status_spread" class="filter-ctrl">
-          <option value="">All Statuses</option>
-          {% for s in statuses %}
-            <option value="{{ s }}" {% if s == selected_status_spread %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('status_spread', 'All Statuses', statuses, selected_status_spread) }}
         <button type="submit" class="filter-apply">Filter</button>
         {% if selected_book_spread or selected_status_spread %}
-          <a href="{{ url_for('summary.index') }}?tab=spread&book={{ selected_book }}&status={{ selected_status }}&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}" class="filter-clear">Clear</a>
+          <a href="{{ url_for('summary.index') }}?tab=spread{{ clear_qs(['book_spread', 'status_spread']) }}" class="filter-clear">Clear</a>
         {% endif %}
       </div>
     </form>
@@ -874,33 +862,23 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="tab-pane {% if active_tab == 'openst1' %}show active{% endif %}" id="tab-openst1" role="tabpanel">
     <form method="GET" class="mb-3">
       <input type="hidden" name="tab" value="openst1">
-      <input type="hidden" name="book" value="{{ selected_book }}">
-      <input type="hidden" name="status" value="{{ selected_status }}">
-      <input type="hidden" name="book_pivot" value="{{ selected_book_pivot }}">
-      <input type="hidden" name="status_pivot" value="{{ selected_status_pivot }}">
-      <input type="hidden" name="book_trader" value="{{ selected_book_trader }}">
-      <input type="hidden" name="status_trader" value="{{ selected_status_trader }}">
-      <input type="hidden" name="tradecode_trader" value="{{ selected_tradecode_trader }}">
-      <input type="hidden" name="book_spread" value="{{ selected_book_spread }}">
-      <input type="hidden" name="status_spread" value="{{ selected_status_spread }}">
+      {{ hidden_multi('book', selected_book) }}
+      {{ hidden_multi('status', selected_status) }}
+      {{ hidden_multi('book_pivot', selected_book_pivot) }}
+      {{ hidden_multi('status_pivot', selected_status_pivot) }}
+      {{ hidden_multi('book_trader', selected_book_trader) }}
+      {{ hidden_multi('status_trader', selected_status_trader) }}
+      {{ hidden_multi('tradecode_trader', selected_tradecode_trader) }}
+      {{ hidden_multi('book_spread', selected_book_spread) }}
+      {{ hidden_multi('status_spread', selected_status_spread) }}
       <div class="filter-bar">
         <label>Book</label>
-        <select name="book_openst1" class="filter-ctrl">
-          <option value="">All Books</option>
-          {% for b in books %}
-            <option value="{{ b }}" {% if b == selected_book_openst1 %}selected{% endif %}>{{ b }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('book_openst1', 'All Books', books, selected_book_openst1) }}
         <label>Trade Code</label>
-        <select name="tradecode_openst1" class="filter-ctrl">
-          <option value="">All Trade Codes</option>
-          {% for tc in trade_codes %}
-            <option value="{{ tc }}" {% if tc == selected_tradecode_openst1 %}selected{% endif %}>{{ tc }}</option>
-          {% endfor %}
-        </select>
+        {{ multi_filter('tradecode_openst1', 'All Trade Codes', trade_codes, selected_tradecode_openst1) }}
         <button type="submit" class="filter-apply">Filter</button>
         {% if selected_book_openst1 or selected_tradecode_openst1 %}
-          <a href="{{ url_for('summary.index') }}?tab=openst1&book={{ selected_book }}&status={{ selected_status }}&book_pivot={{ selected_book_pivot }}&status_pivot={{ selected_status_pivot }}&book_trader={{ selected_book_trader }}&status_trader={{ selected_status_trader }}&tradecode_trader={{ selected_tradecode_trader }}&book_spread={{ selected_book_spread }}&status_spread={{ selected_status_spread }}" class="filter-clear">Clear</a>
+          <a href="{{ url_for('summary.index') }}?tab=openst1{{ clear_qs(['book_openst1', 'tradecode_openst1']) }}" class="filter-clear">Clear</a>
         {% endif %}
       </div>
     </form>
