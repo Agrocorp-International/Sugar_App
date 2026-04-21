@@ -1,0 +1,33 @@
+name: Snapshot Tick
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: snapshot-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: POST /sugar/snapshot/tick
+        run: |
+          set -euo pipefail
+
+          status=$(curl -sS \
+            -o response.json \
+            -w "%{http_code}" \
+            -X POST \
+            -H "X-Cron-Key: ${{ secrets.SNAPSHOT_CRON_KEY }}" \
+            -m 30 \
+            https://sugar-cotton-pnl.azurewebsites.net/sugar/snapshot/tick)
+
+          echo "HTTP status: $status"
+          cat response.json
+
+          test "$status" -ge 200
+          test "$status" -lt 300
