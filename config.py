@@ -1,6 +1,5 @@
 import os
 from dotenv import load_dotenv
-from sqlalchemy.pool import NullPool
 
 load_dotenv()
 
@@ -15,8 +14,14 @@ class Config:
         f"postgresql://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Azure Postgres is remote (SEA); pooling avoids a TCP+TLS+auth handshake per query.
+    # pool_pre_ping is the real safeguard against Azure idle-killed connections.
+    # pool_recycle is a conservative periodic refresh, not matched to Azure's idle timeout.
     SQLALCHEMY_ENGINE_OPTIONS = {
-        "poolclass": NullPool,
+        "pool_size": 10,
+        "max_overflow": 10,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
     }
 
     # Flask

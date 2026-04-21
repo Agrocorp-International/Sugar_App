@@ -5,8 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from models.db import db, MarketPrice, WatchedContract, TradePosition
-from routes.info import (_parse_options, _RAW_OPTIONS, _parse_futures, _RAW_FUTURES,
-                         _parse_sw_futures, _RAW_SW_FUTURES)
+from routes.info import PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS
 
 prices_bp = Blueprint("prices", __name__)
 
@@ -14,15 +13,27 @@ _CONTRACT_RE = re.compile(r'^S[BW][A-Z]\d{2}([CP]\d+)?$')
 _OPTION_RE = re.compile(r'^(S[BW][A-Z]\d{2})([CP])(\d+)$')
 
 
+# Module-level cache: static relative to holidays, recomputed only at import.
+# OPTIONS_BASE_EXPIRY_MAP maps futures contract code (no spaces) → option expiry
+# date, using the option series where contract == underlying (the 'last' series
+# per underlying).
+OPTIONS_BASE_EXPIRY_MAP = {
+    o['contract'].replace(' ', ''): o['expiry']
+    for o in PARSED_OPTIONS
+    if o['contract'].replace(' ', '') == o['underlying'].replace(' ', '')
+}
+FUTURES_EXPIRY_MAP = {f['contract'].replace(' ', ''): f['expiry'] for f in PARSED_FUTURES}
+FUTURES_EXPIRY_MAP.update(
+    {f['contract'].replace(' ', ''): f['expiry'] for f in PARSED_SW_FUTURES}
+)
+
+
 def _build_expiry_map():
-    """Map futures contract code (no spaces) → option expiry date.
-    Uses the option series where contract == underlying (the 'last' series per underlying)."""
-    options = _parse_options(_RAW_OPTIONS)
-    return {
-        o['contract'].replace(' ', ''): o['expiry']
-        for o in options
-        if o['contract'].replace(' ', '') == o['underlying'].replace(' ', '')
-    }
+    """Back-compat pass-through to OPTIONS_BASE_EXPIRY_MAP (cached at import).
+
+    Prefer `OPTIONS_BASE_EXPIRY_MAP` directly in new code.
+    """
+    return OPTIONS_BASE_EXPIRY_MAP
 
 
 @prices_bp.route("/prices")
@@ -47,20 +58,15 @@ def index():
             missing_prices.add(key)
     missing_prices = sorted(missing_prices)
 
-    # Build expiry map: contract → expiry date
-    futures_expiry = {f['contract'].replace(' ', ''): f['expiry']
-                      for f in _parse_futures(_RAW_FUTURES)}
-    futures_expiry.update({f['contract'].replace(' ', ''): f['expiry']
-                           for f in _parse_sw_futures(_RAW_SW_FUTURES)})
-    options_base_expiry = _build_expiry_map()  # base contract → option expiry
+    # Reuse module-level expiry maps (FUTURES_EXPIRY_MAP, OPTIONS_BASE_EXPIRY_MAP).
     expiry_map = {}
     for wc in watched:
         c = wc.contract
         m = _OPTION_RE.match(c)
         if m:
-            expiry_map[c] = options_base_expiry.get(m.group(1))
+            expiry_map[c] = OPTIONS_BASE_EXPIRY_MAP.get(m.group(1))
         else:
-            expiry_map[c] = futures_expiry.get(c)
+            expiry_map[c] = FUTURES_EXPIRY_MAP.get(c)
 
     # Auto-expire contracts whose expiry date has passed.
     # For options, also zero Sett-1 / Delta-1 / IV-1 since the contract no longer trades.

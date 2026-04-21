@@ -5,8 +5,8 @@ _SGT = timedelta(hours=8)
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response, jsonify, abort
 from sqlalchemy import cast, Date
 from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot, PnlSnapshotSchedule
-from routes.info import (_parse_futures, _parse_options, _parse_sw_futures,
-                         _RAW_FUTURES, _RAW_OPTIONS, _RAW_SW_FUTURES, _RAW_HOLIDAYS)
+from routes.info import (PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS,
+                         _RAW_HOLIDAYS)
 from services.pnl_summary import compute_pnl_summary, compute_exposure, get_reference_snapshots
 from services.physical_pnl import compute_all_pnl_totals
 from services.price_source import get_price_source
@@ -112,17 +112,17 @@ def index():
         }
 
     next_future = next(
-        (f for f in sorted(_parse_futures(_RAW_FUTURES), key=lambda f: f["expiry"] or date.max)
+        (f for f in sorted(PARSED_FUTURES, key=lambda f: f["expiry"] or date.max)
          if f["expiry"] and f["expiry"] >= as_of),
         None,
     )
     next_sw_future = next(
-        (f for f in sorted(_parse_sw_futures(_RAW_SW_FUTURES), key=lambda f: f["expiry"] or date.max)
+        (f for f in sorted(PARSED_SW_FUTURES, key=lambda f: f["expiry"] or date.max)
          if f["expiry"] and f["expiry"] >= as_of),
         None,
     )
     next_option = next(
-        (o for o in sorted(_parse_options(_RAW_OPTIONS), key=lambda o: o["expiry"] or date.max)
+        (o for o in sorted(PARSED_OPTIONS, key=lambda o: o["expiry"] or date.max)
          if o["expiry"] and o["expiry"] >= as_of),
         None,
     )

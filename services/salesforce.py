@@ -1,16 +1,44 @@
+import time
+from threading import Lock
 from simple_salesforce import Salesforce
 from flask import current_app
 
 
-def get_sf_connection():
-    """Create and return an authenticated Salesforce connection."""
-    sf = Salesforce(
+# Module-level session cache. Salesforce session TTL defaults to ~2 hours, so
+# refreshing every 20 min keeps us comfortably inside that window — we should
+# not hit SalesforceExpiredSession in practice. invalidate_sf_session() is
+# exposed so callers can force a refresh after catching one if it ever happens.
+_SF_TTL_SECONDS = 20 * 60
+_sf_cache = {"sf": None, "expires_at": 0.0}
+_sf_lock = Lock()
+
+
+def _new_sf_connection():
+    return Salesforce(
         username=current_app.config["SF_USERNAME"],
         password=current_app.config["SF_PASSWORD"],
         security_token=current_app.config["SF_SECURITY_TOKEN"],
         domain=current_app.config["SF_DOMAIN"],
     )
-    return sf
+
+
+def get_sf_connection():
+    """Return a cached authenticated Salesforce connection (~20 min TTL)."""
+    now = time.time()
+    with _sf_lock:
+        if _sf_cache["sf"] is not None and now < _sf_cache["expires_at"]:
+            return _sf_cache["sf"]
+        sf = _new_sf_connection()
+        _sf_cache["sf"] = sf
+        _sf_cache["expires_at"] = now + _SF_TTL_SECONDS
+        return sf
+
+
+def invalidate_sf_session():
+    """Force the next get_sf_connection() call to re-authenticate."""
+    with _sf_lock:
+        _sf_cache["sf"] = None
+        _sf_cache["expires_at"] = 0.0
 
 
 def list_custom_objects(sf):

@@ -198,6 +198,15 @@ def _assert_regression():
 _assert_regression()
 
 
+# Module-level cached parses. Inputs are static relative to holidays (which are
+# themselves only rebuilt at import), so these don't change between requests.
+# Every caller that used to invoke _parse_futures(_RAW_FUTURES) on each request
+# should read these constants instead.
+PARSED_FUTURES = _parse_futures(_RAW_FUTURES)
+PARSED_SW_FUTURES = _parse_sw_futures(_RAW_SW_FUTURES)
+PARSED_OPTIONS = _parse_options(_RAW_OPTIONS)
+
+
 _log = logging.getLogger(__name__)
 
 
@@ -223,9 +232,9 @@ def index():
         grouped[h["date"].year].append(h)
 
     # Parse futures and options with formula-calculated expiry (fallback)
-    futures = _parse_futures(_RAW_FUTURES)
-    sw_futures = _parse_sw_futures(_RAW_SW_FUTURES)
-    options = _parse_options(_RAW_OPTIONS)
+    futures = PARSED_FUTURES
+    sw_futures = PARSED_SW_FUTURES
+    options = PARSED_OPTIONS
 
     return render_template("info.html",
                            grouped=dict(sorted(grouped.items())),

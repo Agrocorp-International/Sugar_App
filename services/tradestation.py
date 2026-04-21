@@ -64,9 +64,13 @@ _STRIKE_SCALE = {
 
 # ── Risk-free rate ────────────────────────────────────────────────────────────
 
+# SOFR updates once per business day; 6-hour TTL is comfortably safe.
+_SOFR_TTL_SECONDS = 6 * 60 * 60
+_sofr_cache = {}  # {pricing_date_key: (result_tuple, expires_at)}
 
-def _fetch_sofr(pricing_date=None):
-    """Fetch SOFR from FRED public CSV.
+
+def _fetch_sofr_uncached(pricing_date=None):
+    """Fetch SOFR from FRED public CSV (no caching).
     If pricing_date (datetime.date) is given, returns the rate for that date,
     falling back to the most recent prior date available in FRED.
     Returns (rate_decimal, date_str). Falls back to (_RISK_FREE_RATE_FALLBACK, None) on error."""
@@ -101,6 +105,19 @@ def _fetch_sofr(pricing_date=None):
     except Exception:
         pass
     return _RISK_FREE_RATE_FALLBACK, None
+
+
+def _fetch_sofr(pricing_date=None):
+    """TTL-cached wrapper around _fetch_sofr_uncached (6-hour refresh)."""
+    import time
+    key = pricing_date.isoformat() if pricing_date is not None else None
+    now = time.time()
+    entry = _sofr_cache.get(key)
+    if entry is not None and now < entry[1]:
+        return entry[0]
+    result = _fetch_sofr_uncached(pricing_date)
+    _sofr_cache[key] = (result, now + _SOFR_TTL_SECONDS)
+    return result
 
 
 # ── Contract helpers ──────────────────────────────────────────────────────────

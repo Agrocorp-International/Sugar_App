@@ -12,7 +12,7 @@ from services.tradestation import (
     _black76_price, _black76_delta, _black76_gamma, _black76_vega, _black76_theta,
     _RISK_FREE_RATE_FALLBACK as _RISK_FREE_RATE, _fetch_sofr,
 )
-from routes.info import _workday, _HOLIDAY_DATES, _parse_futures, _RAW_FUTURES
+from routes.info import _workday, _HOLIDAY_DATES, PARSED_FUTURES
 from routes.positions import build_contract_key, LOT_MULTIPLIERS_BY_PREFIX as _MULTIPLIERS
 from services.iv_utils import calculate_scenario_iv
 from services.request_cache import get_all_positions
@@ -189,7 +189,7 @@ def index():
     # SB futures reference month list (no spaces, e.g. "SBH26")
     sb_futures = [
         {'code': f['contract'].replace(' ', ''), 'label': f['contract'], 'expiry': f['expiry']}
-        for f in _parse_futures(_RAW_FUTURES)
+        for f in PARSED_FUTURES
         if f['expiry'] is not None
     ]
     # Keep only non-expired contracts
