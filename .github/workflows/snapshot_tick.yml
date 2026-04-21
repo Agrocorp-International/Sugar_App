@@ -24,7 +24,7 @@ jobs:
             -X POST \
             -H "X-Cron-Key: ${{ secrets.SNAPSHOT_CRON_KEY }}" \
             -m 30 \
-            https://sugar-cotton-pnl.azurewebsites.net/sugar/snapshot/tick)
+            https://sugar-cotton-pnl-g9hsasb3bnfjbmat.southeastasia-01.azurewebsites.net/sugar/snapshot/tick)
 
           echo "HTTP status: $status"
           cat response.json
