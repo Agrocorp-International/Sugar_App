@@ -705,8 +705,7 @@
           <input class="form-check-input" type="checkbox" name="enabled" id="sched_{{ slot }}_enabled" {% if sch and sch.enabled %}checked{% endif %}>
           <label class="form-check-label" for="sched_{{ slot }}_enabled">Auto</label>
         </div>
-        <input type="time" name="time" class="form-control form-control-sm" style="width: 110px;"
-               value="{{ '%02d:%02d'|format(sch.hour, sch.minute) if sch else '18:00' }}">
+        <span class="text-muted small">at 06:00 SGT</span>
         {% if slot == 'weekly' %}
         <select name="weekday" class="form-select form-select-sm" style="width: 110px;">
           {% for i, n in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}

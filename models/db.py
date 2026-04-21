@@ -170,7 +170,7 @@ class PnlSnapshotSchedule(db.Model):
 
     slot               = db.Column(db.String(10), primary_key=True)  # 'daily','weekly','monthly'
     enabled            = db.Column(db.Boolean, nullable=False, default=False)
-    hour               = db.Column(db.Integer, nullable=False, default=18)
+    hour               = db.Column(db.Integer, nullable=False, default=6)
     minute             = db.Column(db.Integer, nullable=False, default=0)
     weekday            = db.Column(db.Integer, nullable=True)
     day_of_month       = db.Column(db.Integer, nullable=True)

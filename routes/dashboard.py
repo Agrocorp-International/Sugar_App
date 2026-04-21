@@ -247,13 +247,7 @@ def save_snapshot_schedule(slot):
         return redirect(url_for("dashboard.index"))
     try:
         enabled = request.form.get("enabled") == "on"
-        time_str = (request.form.get("time") or "").strip()  # "HH:MM"
-        try:
-            hh, mm = [int(x) for x in time_str.split(":", 1)]
-        except Exception:
-            hh, mm = 18, 0
-        if not (0 <= hh <= 23 and 0 <= mm <= 59):
-            raise ValueError("time must be HH:MM in 00:00..23:59")
+        hh, mm = 6, 0
 
         weekday = None
         day_of_month = None
