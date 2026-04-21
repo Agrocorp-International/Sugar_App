@@ -117,7 +117,7 @@ def index():
     if pnl_summary and daily_s:
         try:
             pnl_attribution = get_or_compute(
-                key=("dashboard.attribution",) + _dash_key + (daily_s.id,),
+                key=("dashboard.attribution",) + _dash_key + (daily_s.snapshotted_at,),
                 ttl=120,
                 fn=lambda: compute_attribution(daily_s, pnl_summary),
             )
