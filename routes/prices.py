@@ -108,10 +108,13 @@ def index():
                            last_sett_sgt=last_sett_sgt, last_live_sgt=last_live_sgt)
 
 
-def _run_sett1_fetch():
+def _run_sett1_fetch(include_live=False):
     """Fetch sett-1 prices for all active watchlist contracts, archive sett-1 → sett-2
-    when ICE has published a new settlement date, then upsert MarketPrice. UI-agnostic;
-    callers handle flash/redirect or JSON."""
+    when ICE has published a new settlement date, then upsert MarketPrice. When
+    include_live=True, also stamps live_fetched_at and upserts the live_* columns
+    (typically null between NY sessions — by design, so morning users see a clean
+    slate rather than yesterday's stale live values). UI-agnostic; callers handle
+    flash/redirect or JSON."""
     contracts = [
         wc.contract
         for wc in WatchedContract.query.filter_by(expired=False)
@@ -141,6 +144,8 @@ def _run_sett1_fetch():
         now_utc = datetime.utcnow()
         for r in results:
             r["sett_fetched_at"] = now_utc
+            if include_live:
+                r["live_fetched_at"] = now_utc
 
         stmt = pg_insert(MarketPrice).values(results)
         update_cols = {
@@ -151,6 +156,13 @@ def _run_sett1_fetch():
             "fetched_at":      stmt.excluded.fetched_at,
             "sett_fetched_at": stmt.excluded.sett_fetched_at,
         }
+        if include_live:
+            update_cols.update({
+                "live_price":      stmt.excluded.live_price,
+                "live_iv":         stmt.excluded.live_iv,
+                "live_delta":      stmt.excluded.live_delta,
+                "live_fetched_at": stmt.excluded.live_fetched_at,
+            })
         stmt = stmt.on_conflict_do_update(index_elements=["contract"], set_=update_cols)
         db.session.execute(stmt)
         db.session.commit()
@@ -271,7 +283,7 @@ def prices_tick():
     if not expected_key or request.headers.get("X-Cron-Key") != expected_key:
         abort(403)
     try:
-        result = _run_sett1_fetch()
+        result = _run_sett1_fetch(include_live=True)
         current_app.logger.info(
             "prices_tick expected=%d fetched=%d errors=%d archived=%s sett_date=%s",
             result["expected"], result["fetched"], len(result["errors"]),
