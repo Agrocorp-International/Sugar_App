@@ -1,7 +1,8 @@
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from services.tradestation import fetch_prices as _ts_fetch_prices, _fetch_sofr
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort, current_app
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from models.db import db, MarketPrice, WatchedContract, TradePosition
@@ -107,9 +108,86 @@ def index():
                            last_sett_sgt=last_sett_sgt, last_live_sgt=last_live_sgt)
 
 
+def _run_sett1_fetch():
+    """Fetch sett-1 prices for all active watchlist contracts, archive sett-1 → sett-2
+    when ICE has published a new settlement date, then upsert MarketPrice. UI-agnostic;
+    callers handle flash/redirect or JSON."""
+    contracts = [
+        wc.contract
+        for wc in WatchedContract.query.filter_by(expired=False)
+                                       .order_by(WatchedContract.sort_order,
+                                                 WatchedContract.created_at)
+                                       .all()
+    ]
+    expected = len(contracts)
+    if not contracts:
+        return {"expected": 0, "fetched": 0, "errors": [], "sett_date": None, "archived": False}
+
+    results, errors, sett_date = _ts_fetch_prices(contracts)
+    archived = False
+
+    if results:
+        if sett_date is not None:
+            old_sett_date = db.session.query(db.func.max(MarketPrice.sett_date)).scalar()
+            if old_sett_date is not None and sett_date > old_sett_date:
+                db.session.execute(
+                    db.update(MarketPrice).values(
+                        settlement2=MarketPrice.settlement,
+                        delta2=MarketPrice.delta,
+                    )
+                )
+                archived = True
+
+        now_utc = datetime.utcnow()
+        for r in results:
+            r["sett_fetched_at"] = now_utc
+
+        stmt = pg_insert(MarketPrice).values(results)
+        update_cols = {
+            "settlement":      stmt.excluded.settlement,
+            "delta":           stmt.excluded.delta,
+            "iv":              stmt.excluded.iv,
+            "sett_date":       stmt.excluded.sett_date,
+            "fetched_at":      stmt.excluded.fetched_at,
+            "sett_fetched_at": stmt.excluded.sett_fetched_at,
+        }
+        stmt = stmt.on_conflict_do_update(index_elements=["contract"], set_=update_cols)
+        db.session.execute(stmt)
+        db.session.commit()
+
+    return {
+        "expected": expected,
+        "fetched": len(results),
+        "errors": errors,
+        "sett_date": sett_date,
+        "archived": archived,
+    }
+
+
 @prices_bp.route("/prices/fetch", methods=["POST"])
 def fetch_tradestation():
     mode = request.form.get("mode", "all")  # sett1 | live | all
+
+    if mode == "sett1":
+        try:
+            result = _run_sett1_fetch()
+        except Exception as e:
+            flash(f"TradeStation fetch error: {e}", "danger")
+            return redirect(url_for("prices.index"))
+        if result["expected"] == 0:
+            flash("No active contracts in watchlist.", "warning")
+            return redirect(url_for("prices.index"))
+        if result["fetched"] > 0:
+            r, sofr_date = _fetch_sofr()
+            sofr_label = f"{r*100:.3f}% (as of {sofr_date})" if sofr_date else f"{r*100:.3f}% (fallback)"
+            sett_label = result["sett_date"].strftime('%d %b %Y') if result["sett_date"] else "unknown"
+            flash(f"Fetched {result['fetched']} price(s). Pricing date: {sett_label}. SOFR = {sofr_label}", "success")
+        else:
+            flash("No prices returned from TradeStation.", "warning")
+        for msg in result["errors"]:
+            flash(msg, "warning")
+        return redirect(url_for("prices.index"))
+
     contracts = [
         wc.contract
         for wc in WatchedContract.query.filter_by(expired=False)
@@ -128,7 +206,7 @@ def fetch_tradestation():
         return redirect(url_for("prices.index"))
 
     if results:
-        if mode in ("sett1", "all") and sett_date is not None:
+        if mode == "all" and sett_date is not None:
             old_sett_date = db.session.query(db.func.max(MarketPrice.sett_date)).scalar()
             if old_sett_date is not None and sett_date > old_sett_date:
                 db.session.execute(
@@ -140,22 +218,13 @@ def fetch_tradestation():
 
         now_utc = datetime.utcnow()
         for r in results:
-            if mode in ("sett1", "all"):
+            if mode == "all":
                 r["sett_fetched_at"] = now_utc
             if mode in ("live", "all"):
                 r["live_fetched_at"] = now_utc
 
         stmt = pg_insert(MarketPrice).values(results)
-        if mode == "sett1":
-            update_cols = {
-                "settlement": stmt.excluded.settlement,
-                "delta":      stmt.excluded.delta,
-                "iv":         stmt.excluded.iv,
-                "sett_date":  stmt.excluded.sett_date,
-                "fetched_at": stmt.excluded.fetched_at,
-                "sett_fetched_at": stmt.excluded.sett_fetched_at,
-            }
-        elif mode == "live":
+        if mode == "live":
             update_cols = {
                 "live_price": stmt.excluded.live_price,
                 "live_iv":    stmt.excluded.live_iv,
@@ -191,6 +260,34 @@ def fetch_tradestation():
         flash(msg, "warning")
 
     return redirect(url_for("prices.index"))
+
+
+@prices_bp.route("/prices/tick", methods=["POST"])
+def prices_tick():
+    """Cron entrypoint for the daily EOD sett-1 pull. Requires X-Cron-Key header
+    matching SNAPSHOT_CRON_KEY env var (reused — no separate secret). Idempotent:
+    the sett-1 → sett-2 archive only fires when ICE publishes a new sett_date."""
+    expected_key = os.getenv("SNAPSHOT_CRON_KEY")
+    if not expected_key or request.headers.get("X-Cron-Key") != expected_key:
+        abort(403)
+    try:
+        result = _run_sett1_fetch()
+        current_app.logger.info(
+            "prices_tick expected=%d fetched=%d errors=%d archived=%s sett_date=%s",
+            result["expected"], result["fetched"], len(result["errors"]),
+            result["archived"], result["sett_date"],
+        )
+        return jsonify({
+            "expected":  result["expected"],
+            "fetched":   result["fetched"],
+            "errors":    result["errors"],
+            "sett_date": result["sett_date"].isoformat() if result["sett_date"] else None,
+            "archived":  result["archived"],
+        })
+    except Exception as e:
+        current_app.logger.exception("prices_tick failed")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 
