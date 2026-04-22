@@ -226,6 +226,12 @@ def compute_attribution(snapshot, pnl_summary_today):
     dt_days = (now - snap_time).total_seconds() / 86400.0
 
     delta_sum = gamma_sum = vega_sum = theta_sum = 0.0
+    # Per-asset-class split (Γ=Vega=Θ=0 for futures, so futures live entirely
+    # in delta — surfacing futures separately gives a "Futures" row on the
+    # dashboard and keeps the Options bucket clean).
+    futures_delta = 0.0
+    options_delta = 0.0
+    options_actual_sum = 0.0
     actual_legs_sum = 0.0
     leg_count = 0
     missing_today = 0
@@ -243,8 +249,10 @@ def compute_attribution(snapshot, pnl_summary_today):
                 missing_today += 1
                 continue
             dF = F_today - F_prev
-            delta_sum += dF * lots * mult           # Δ = 1
-            actual_legs_sum += dF * lots * mult
+            contrib = dF * lots * mult              # Δ = 1
+            delta_sum += contrib
+            futures_delta += contrib
+            actual_legs_sum += contrib
             leg_count += 1
             continue
 
@@ -285,13 +293,17 @@ def compute_attribution(snapshot, pnl_summary_today):
         vega_prev = float(leg["vega_prev"])
         theta_prev = float(leg["theta_prev"])
 
-        delta_sum += delta_prev * dF * lots * mult
+        d_contrib = delta_prev * dF * lots * mult
+        delta_sum += d_contrib
+        options_delta += d_contrib
         gamma_sum += 0.5 * gamma_prev * (dF ** 2) * lots * mult
         vega_sum += vega_prev * dSigma * lots * mult
         theta_sum += theta_prev * dt_days * lots * mult
 
         value_today = opt_price_today * lots * mult
-        actual_legs_sum += value_today - float(leg["value_prev"])
+        opt_change = value_today - float(leg["value_prev"])
+        actual_legs_sum += opt_change
+        options_actual_sum += opt_change
         leg_count += 1
 
     # Second pass: attribute new/closed FUTURES (post-snapshot activity) into Delta.
@@ -354,11 +366,16 @@ def compute_attribution(snapshot, pnl_summary_today):
             continue
         contribution = (F_today - float(price)) * lots * fut_mult
         delta_sum += contribution
+        futures_delta += contribution
         actual_legs_sum += contribution
         leg_count += 1
 
     explained = delta_sum + gamma_sum + vega_sum + theta_sum
     model_residual = actual_legs_sum - explained
+    # Options-only residual (futures have no Γ/Vega/Θ and no model error,
+    # so the entire model residual is in the options bucket).
+    options_explained = options_delta + gamma_sum + vega_sum + theta_sum
+    options_residual = options_actual_sum - options_explained
 
     # Reconcile attribution to the summary table's Net Alpha Daily Chg.
     # Difference vs actual_legs_sum captures day-1 PnL on trades opened or
@@ -385,4 +402,13 @@ def compute_attribution(snapshot, pnl_summary_today):
         "missing_today": missing_today,
         "excluded_at_snapshot": meta.get("excluded_legs", 0),
         "excluded_list": meta.get("excluded_list") or [],
+        # ── Per-asset-class split for the dashboard popover ─────────────
+        "futures": futures_delta,
+        "options_delta": options_delta,
+        "options_gamma": gamma_sum,
+        "options_vega": vega_sum,
+        "options_theta": theta_sum,
+        "options_residual": options_residual,
     }
+
+

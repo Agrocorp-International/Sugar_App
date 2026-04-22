@@ -354,7 +354,18 @@
 </td>
 </tr>
 {%- endmacro -%}
-{% set attr_html %}<table style="border-collapse:collapse;font-size:.85rem;margin:0;min-width:200px;"><tbody>{{ attr_row('Delta', pnl_attribution.delta) }}{{ attr_row('Gamma', pnl_attribution.gamma) }}{{ attr_row('Vega', pnl_attribution.vega) }}{{ attr_row('Theta', pnl_attribution.theta) }}{{ attr_row('Residual', pnl_attribution.model_residual) }}{{ attr_row('T-1 Options', pnl_attribution.position_changes) }}{{ attr_row('Total', pnl_attribution.net_alpha_change, true) }}</tbody></table>{% endset %}
+{%- macro attr_subrow(label, v) -%}
+<tr>
+<td style="padding:2px 14px 2px 18px;color:#444;font-weight:500;font-size:.8rem;">{{ label }}</td>
+<td style="padding:2px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:500;font-size:.8rem;{% if v is none %}color:#6c757d{% elif v > 0 %}color:#16a34a{% elif v < 0 %}color:#dc2626{% else %}color:#6c757d{% endif %}">
+{%- if v is none -%}—{%- elif v == 0 -%}$0{%- elif v > 0 -%}+${{ "{:,.0f}".format(v) }}{%- else -%}-${{ "{:,.0f}".format(v|abs) }}{%- endif -%}
+</td>
+</tr>
+{%- endmacro -%}
+{%- macro attr_section(label) -%}
+<tr><td colspan="2" style="padding:4px 0 2px 0;color:#111;font-weight:600;">{{ label }}</td></tr>
+{%- endmacro -%}
+{% set attr_html %}<table style="border-collapse:collapse;font-size:.85rem;margin:0;min-width:220px;"><tbody>{{ attr_row('Futures', pnl_attribution.futures) }}{{ attr_section('Options') }}{{ attr_subrow('Delta', pnl_attribution.options_delta) }}{{ attr_subrow('Gamma', pnl_attribution.options_gamma) }}{{ attr_subrow('Vega', pnl_attribution.options_vega) }}{{ attr_subrow('Theta', pnl_attribution.options_theta) }}{{ attr_subrow('Residual', pnl_attribution.options_residual) }}{{ attr_row('Total', pnl_attribution.net_alpha_change, true) }}</tbody></table>{% endset %}
 {% endif %}
 <div class="card mt-2">
   <style>
