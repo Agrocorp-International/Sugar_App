@@ -133,17 +133,6 @@ class FFASettlement(db.Model):
         return f"<FFASettlement {self.shipment}>"
 
 
-class OptionExpiry(db.Model):
-    __tablename__ = "sugar_option_expiries"
-
-    series     = db.Column(db.String(20), primary_key=True)   # e.g. "SB K26"
-    expiry     = db.Column(db.Date, nullable=False)
-    fetched_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-    def __repr__(self):
-        return f"<OptionExpiry {self.series} {self.expiry}>"
-
-
 class PnlSnapshot(db.Model):
     __tablename__ = "sugar_pnl_snapshots"
 
