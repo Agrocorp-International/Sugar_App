@@ -40,6 +40,7 @@ def run_sync():
 
         # Clear all existing trades before inserting fresh data
         TradePosition.query.delete()
+        db.session.info.setdefault("_cache_bump_models", set()).add(TradePosition)
 
         # Insert all records
         count = 0

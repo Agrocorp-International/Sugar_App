@@ -95,7 +95,7 @@ def install_autobump():
     def _mark_pending_bumps(session):
         # Snapshot which model classes have pending writes. Stored on the
         # session so after_commit can act after the transaction succeeds.
-        seen = set()
+        seen = set(session.info.get("_cache_bump_models", set()))
         for obj in list(session.new) + list(session.dirty) + list(session.deleted):
             seen.add(type(obj))
         session.info["_cache_bump_models"] = seen
