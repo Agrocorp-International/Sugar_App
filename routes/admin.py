@@ -1,9 +1,10 @@
 import os
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
+from werkzeug.utils import secure_filename
 from models.db import db, AutoTagRun
 
 admin_bp = Blueprint("admin", __name__)
@@ -19,10 +20,31 @@ def _upload_base_dir() -> Path:
 
 _UPLOAD_DIR = _upload_base_dir() / "sugar_admin_upload"
 
-# ── Default date filters (update these when the year rolls over) ─────────────
-AUTO_TAG_DEFAULT_START = "2025-12-31"
-SPEC_CHECK_DEFAULT_START = "2025-03-31"
-IT_CHECK_DEFAULT_START = "2025-03-30"
+# ── Default date filters (computed from today; Agrocorp FY starts 1 April) ──
+
+def _fy_start(today: date | None = None) -> date:
+    """Start of the current Agrocorp FY (1 April)."""
+    d = today or date.today()
+    year = d.year if d.month >= 4 else d.year - 1
+    return date(year, 4, 1)
+
+
+def _prev_year_end(today: date | None = None) -> date:
+    """31 Dec of the previous calendar year."""
+    d = today or date.today()
+    return date(d.year - 1, 12, 31)
+
+
+def _auto_tag_default_start() -> str:
+    return _prev_year_end().isoformat()
+
+
+def _spec_check_default_start() -> str:
+    return (_fy_start() - timedelta(days=1)).isoformat()
+
+
+def _it_check_default_start() -> str:
+    return (_fy_start() - timedelta(days=2)).isoformat()
 
 
 def _get_xlsx_path():
@@ -31,6 +53,9 @@ def _get_xlsx_path():
     Returns (path_str, filename) or (None, None)."""
     f = request.files.get("xlsx")
     if f and f.filename:
+        safe_name = secure_filename(Path(f.filename).name)
+        if not safe_name:
+            return None, None
         _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         # Remove old cached file
         old_path = session.pop("uploaded_xlsx_path", None)
@@ -39,11 +64,12 @@ def _get_xlsx_path():
                 os.unlink(old_path)
             except OSError:
                 pass
-        save_path = _UPLOAD_DIR / f.filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+        save_path = _UPLOAD_DIR / f"{timestamp}_{safe_name}"
         f.save(str(save_path))
         session["uploaded_xlsx_path"] = str(save_path)
-        session["uploaded_xlsx_name"] = f.filename
-        return str(save_path), f.filename
+        session["uploaded_xlsx_name"] = safe_name
+        return str(save_path), safe_name
 
     # No new upload — try cached file
     cached = session.get("uploaded_xlsx_path")
@@ -126,10 +152,10 @@ def index():
     return render_template(
         "admin.html",
         auto_tag_preview=auto_tag_preview,
-        auto_tag_default_start=AUTO_TAG_DEFAULT_START,
+        auto_tag_default_start=_auto_tag_default_start(),
         auto_tag_default_end=date.today().isoformat(),
-        it_check_default_start=IT_CHECK_DEFAULT_START,
-        spec_check_default_start=SPEC_CHECK_DEFAULT_START,
+        it_check_default_start=_it_check_default_start(),
+        spec_check_default_start=_spec_check_default_start(),
         spec_check_preview=spec_check_preview,
         it_check_preview=it_check_preview,
         cached_xlsx_name=session.get("uploaded_xlsx_name"),
@@ -149,7 +175,7 @@ def auto_tag_preview():
         flash("Please choose a sugarm2m .xlsm file to preview.", "warning")
         return redirect(url_for("admin.index"))
 
-    start_str = (request.form.get("start_date") or AUTO_TAG_DEFAULT_START).strip()
+    start_str = (request.form.get("start_date") or _auto_tag_default_start()).strip()
     end_str = (request.form.get("end_date") or date.today().isoformat()).strip()
     try:
         start_d = datetime.strptime(start_str, "%Y-%m-%d").date()
@@ -291,7 +317,7 @@ def spec_check_preview():
         flash("Please choose a sugarm2m .xlsm file for the spec check.", "warning")
         return redirect(url_for("admin.index"))
 
-    start_str = (request.form.get("start_date") or SPEC_CHECK_DEFAULT_START).strip()
+    start_str = (request.form.get("start_date") or _spec_check_default_start()).strip()
     end_str = (request.form.get("end_date") or date.today().isoformat()).strip()
     try:
         start_d = datetime.strptime(start_str, "%Y-%m-%d").date()
@@ -352,7 +378,7 @@ def it_check_preview():
     from services.auto_tag import stage_to_tempfile, discard_staged
     from services.salesforce import get_sf_connection
 
-    start_str = (request.form.get("start_date") or IT_CHECK_DEFAULT_START).strip()
+    start_str = (request.form.get("start_date") or _it_check_default_start()).strip()
     end_str = (request.form.get("end_date") or date.today().isoformat()).strip()
     try:
         start_d = datetime.strptime(start_str, "%Y-%m-%d").date()

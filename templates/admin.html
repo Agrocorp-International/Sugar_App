@@ -578,16 +578,16 @@
 <hr class="my-4">
 <div class="alert alert-info small mb-4" role="alert">
   <i class="bi bi-info-circle-fill me-2"></i>
-  <strong>Hardcoded date filters</strong> &mdash; update these when the year rolls over:
+  <strong>Date filters in the codebase</strong>
 
-  <div class="mt-2 mb-1 fw-semibold">Default start dates <span class="fw-normal text-muted">(routes/admin.py, top of file)</span></div>
+  <div class="mt-2 mb-1 fw-semibold">Default start dates <span class="fw-normal text-muted">(routes/admin.py &mdash; computed from today, no manual updates needed)</span></div>
   <ul class="mb-2">
-    <li><code>AUTO_TAG_DEFAULT_START</code> &mdash; currently <strong>{{ auto_tag_default_start }}</strong></li>
-    <li><code>SPEC_CHECK_DEFAULT_START</code> &mdash; currently <strong>{{ spec_check_default_start }}</strong></li>
-    <li><code>IT_CHECK_DEFAULT_START</code> &mdash; currently <strong>{{ it_check_default_start }}</strong></li>
+    <li>Auto-tag start &mdash; <strong>{{ auto_tag_default_start }}</strong> <span class="text-muted">(prior calendar year-end)</span></li>
+    <li>Spec check start &mdash; <strong>{{ spec_check_default_start }}</strong> <span class="text-muted">(day before current FY start)</span></li>
+    <li>IT check start &mdash; <strong>{{ it_check_default_start }}</strong> <span class="text-muted">(two days before current FY start)</span></li>
   </ul>
 
-  <div class="mb-1 fw-semibold">SOQL query filters <span class="fw-normal text-muted">(services/salesforce.py, line ~57-58)</span></div>
+  <div class="mb-1 fw-semibold">SOQL query filters <span class="fw-normal text-muted">(services/salesforce.py, line ~57-58 &mdash; update when FY rolls over)</span></div>
   <ul class="mb-2">
     <li><code>Trade_Date__c &gt; 2025-03-31</code> &mdash; main trade date cutoff</li>
     <li><code>Trade_Date__c &gt; 2026-02-01 OR Trader__c != null</code> &mdash; allows older trades only if Trader is tagged</li>

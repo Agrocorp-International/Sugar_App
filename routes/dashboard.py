@@ -51,6 +51,7 @@ def index():
             fn=lambda: compute_all_pnl_totals(price_source),
         )
     except Exception:
+        current_app.logger.exception("dashboard.physical_totals failed")
         physical_totals = None
 
     try:
@@ -60,6 +61,7 @@ def index():
             fn=lambda: compute_pnl_summary(price_source, physical_totals=physical_totals),
         )
     except Exception:
+        current_app.logger.exception("dashboard.pnl_summary failed")
         pnl_summary = None
 
     try:
@@ -69,6 +71,7 @@ def index():
             fn=lambda: compute_exposure(price_source, physical_totals=physical_totals),
         )
     except Exception:
+        current_app.logger.exception("dashboard.exposure failed")
         exposure = None
 
     # VaR reads from public.daily_var (notebook-owned, typically daily updates),
@@ -80,6 +83,7 @@ def index():
             fn=compute_var_summary,
         )
     except Exception:
+        current_app.logger.exception("dashboard.var_summary failed")
         var_summary = None
 
     def _delta(snap):
@@ -96,7 +100,7 @@ def index():
     try:
         daily_s, weekly_s, monthly_s = get_reference_snapshots()
     except Exception:
-        pass
+        current_app.logger.exception("dashboard.reference_snapshots failed")
 
     snap_slots = {'daily': daily_s, 'weekly': weekly_s, 'monthly': monthly_s}
 
@@ -105,11 +109,11 @@ def index():
     daily_delta = weekly_delta = monthly_delta = None
     if pnl_summary:
         try: daily_delta   = _delta(daily_s)
-        except Exception: pass
+        except Exception: current_app.logger.exception("dashboard.delta[daily] failed")
         try: weekly_delta  = _delta(weekly_s)
-        except Exception: pass
+        except Exception: current_app.logger.exception("dashboard.delta[weekly] failed")
         try: monthly_delta = _delta(monthly_s)
-        except Exception: pass
+        except Exception: current_app.logger.exception("dashboard.delta[monthly] failed")
 
     pnl_changes = {"daily": daily_delta, "weekly": weekly_delta, "monthly": monthly_delta}
 
@@ -216,7 +220,9 @@ def set_price_source():
         src = "sett1"
     next_url = request.values.get("next") or url_for("dashboard.index")
     # Defence against open-redirect: only allow same-origin relative paths
-    if not next_url.startswith("/"):
+    if (not next_url.startswith("/")
+            or next_url.startswith("//")
+            or "\\" in next_url):
         next_url = url_for("dashboard.index")
     resp = make_response(redirect(next_url))
     # 30 days, lax samesite is fine — this is a UI preference, not auth

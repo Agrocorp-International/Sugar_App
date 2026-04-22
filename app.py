@@ -134,4 +134,4 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True, port=5001)
+    app.run(debug=app.config.get("DEBUG", False), port=5001)

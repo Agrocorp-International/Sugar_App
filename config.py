@@ -25,7 +25,15 @@ class Config:
     }
 
     # Flask
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+    ENV = os.getenv("FLASK_ENV", "development").lower()
+    DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
+    _secret = os.getenv("SECRET_KEY")
+    if ENV == "production" and not _secret:
+        raise RuntimeError(
+            "SECRET_KEY must be set when FLASK_ENV=production."
+        )
+    SECRET_KEY = _secret or "dev-secret-change-in-prod"
 
     # Salesforce
     SF_USERNAME = os.getenv("SF_USERNAME")
