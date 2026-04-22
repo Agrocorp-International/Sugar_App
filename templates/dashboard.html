@@ -720,7 +720,6 @@
           {% endfor %}
         </select>
         {% endif %}
-        <button type="submit" class="btn btn-sm btn-outline-primary">Save schedule</button>
       </form>
       {% endfor %}
       <div class="dash-snap-help">Changes compare current P&amp;L against each saved snapshot. Auto-save requires an external cron to POST <code>/sugar/snapshot/tick</code> with header <code>X-Cron-Key</code>.</div>
@@ -763,6 +762,17 @@
     apply(hidden);
   });
 })();
+
+// Auto-save snapshot schedule forms on any input change (no Save button, no reload).
+document.querySelectorAll('form.dash-snap-sched').forEach(function(form) {
+  form.addEventListener('change', function() {
+    fetch(form.action, {
+      method: 'POST',
+      body: new FormData(form),
+      redirect: 'manual'
+    }).catch(function(err) { console.error('Schedule save failed:', err); });
+  });
+});
 </script>
 
 <!-- Snapshot Edit Modal -->
