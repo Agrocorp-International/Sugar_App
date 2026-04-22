@@ -1,6 +1,18 @@
 from collections import OrderedDict
 from datetime import datetime
 from flask import Blueprint, render_template, redirect, url_for, flash
+
+_MTM_FORMATS = ["%b-%y", "%b %Y", "%B %Y", "%Y-%m", "%m/%Y"]
+
+def _mtm_sort_key(val):
+    # Normalise non-standard abbreviations
+    normalised = val.strip().replace("Sept-", "Sep-").replace("Sept ", "Sep ")
+    for fmt in _MTM_FORMATS:
+        try:
+            return datetime.strptime(normalised, fmt)
+        except ValueError:
+            continue
+    return datetime.max
 from models.db import db, PhysicalTrade
 from services.salesforce import get_sf_connection, fetch_report
 
@@ -58,6 +70,11 @@ def _build_groups(rows):
             "is_unassigned": venture_id == "",
             "row_count": len(bucket_rows),
             "total_qty": total_qty,
+            "mtm_months": sorted({
+                (r.data.get("MTM Shipment Month") or "").strip()
+                for r in bucket_rows
+                if (r.data.get("MTM Shipment Month") or "").strip() not in ("", "-")
+            }, key=_mtm_sort_key),
             "counterparty": _first_nonblank(
                 i.data.get("Counterparty: Account Name") for i in bucket_rows
             ),
@@ -94,6 +111,11 @@ def index():
     groups = _build_groups(rows)
     last_synced = rows[0].synced_at if rows else None
     all_columns = list(rows[0].data.keys()) if rows else []
+    all_mtm = sorted({
+        (r.data.get("MTM Shipment Month") or "").strip()
+        for r in rows
+        if (r.data.get("MTM Shipment Month") or "").strip()
+    }, key=_mtm_sort_key)
     return render_template(
         "physical.html",
         groups=groups,
@@ -101,6 +123,7 @@ def index():
         last_synced=last_synced,
         row_columns=ROW_COLUMNS,
         all_columns=all_columns,
+        mtm_months=all_mtm,
     )
 
 

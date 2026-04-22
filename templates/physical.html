@@ -57,6 +57,98 @@
 
   .v-unassigned .v-header { background: #fafaf9; border-style: dashed; }
   .v-unassigned .v-id { color: #78716c; font-style: italic; font-family: inherit; }
+
+  /* Slicer */
+  .xl-slicer {
+    display: inline-flex;
+    flex-direction: column;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    max-width: 100%;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    margin-bottom: 1rem;
+  }
+  .xl-slicer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e5e7eb;
+    border-radius: 8px 8px 0 0;
+    gap: 8px;
+  }
+  .xl-slicer-title {
+    font-size: .7rem;
+    font-weight: 700;
+    color: #475569;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .xl-slicer-header-right {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .xl-slicer-count {
+    font-size: .67rem;
+    font-weight: 600;
+    color: #2563eb;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    padding: 1px 7px;
+    display: none;
+  }
+  .xl-slicer-clear {
+    background: none;
+    border: none;
+    padding: 2px 3px;
+    cursor: pointer;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    font-size: .82rem;
+    border-radius: 3px;
+    transition: color .1s, background .1s;
+  }
+  .xl-slicer-clear:hover { color: #ef4444; background: #fef2f2; }
+  .xl-slicer-clear.disabled { opacity: .25; cursor: default; pointer-events: none; }
+  .xl-slicer-list {
+    padding: 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 5px;
+  }
+  .xl-slicer-item {
+    display: block;
+    text-align: center;
+    padding: 6px 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #f9fafb;
+    color: #374151;
+    font-size: .8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .1s, border-color .1s, color .1s;
+    white-space: nowrap;
+  }
+  .xl-slicer-item:hover {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }
+  .xl-slicer-item.active {
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #fff;
+    font-weight: 600;
+  }
+  .xl-slicer-item.active:hover { background: #1d4ed8; border-color: #1e40af; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -84,10 +176,29 @@
   </div>
 </div>
 
+{% if mtm_months %}
+<div class="xl-slicer" id="mtm-slicer">
+  <div class="xl-slicer-header">
+    <span class="xl-slicer-title">Future Month</span>
+    <div class="xl-slicer-header-right">
+      <span class="xl-slicer-count" id="slicerCount"></span>
+      <button class="xl-slicer-clear disabled" id="slicerClear" title="Clear filter">
+        <i class="bi bi-funnel"></i>
+      </button>
+    </div>
+  </div>
+  <div class="xl-slicer-list">
+    {% for m in mtm_months %}
+      <button class="xl-slicer-item" data-val="{{ m }}">{{ m }}</button>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if groups %}
   {% for g in groups %}
     {% set gid = 'venture-' ~ loop.index %}
-    <div class="v-card {% if g.is_unassigned %}v-unassigned{% endif %}">
+    <div class="v-card {% if g.is_unassigned %}v-unassigned{% endif %}" data-mtm="{{ g.mtm_months | join(',') }}">
       <div class="v-header" data-bs-toggle="collapse" data-bs-target="#{{ gid }}"
            aria-expanded="false" aria-controls="{{ gid }}">
         <div>
@@ -165,6 +276,45 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    // Excel-style MTM slicer
+    const slicerItems = document.querySelectorAll('.xl-slicer-item');
+    const slicerClear = document.getElementById('slicerClear');
+    const slicerCount = document.getElementById('slicerCount');
+    const cards = document.querySelectorAll('.v-card[data-mtm]');
+
+    function activeMonths() {
+      return [...document.querySelectorAll('.xl-slicer-item.active')].map(i => i.dataset.val);
+    }
+    function applySlicerFilter() {
+      const active = activeMonths();
+      const hasFilter = active.length > 0;
+      if (slicerClear) slicerClear.classList.toggle('disabled', !hasFilter);
+      if (slicerCount) {
+        slicerCount.textContent = active.length;
+        slicerCount.style.display = hasFilter ? '' : 'none';
+      }
+      cards.forEach(card => {
+        if (!hasFilter) {
+          card.style.display = '';
+        } else {
+          const months = card.dataset.mtm ? card.dataset.mtm.split(',') : [];
+          card.style.display = active.some(v => months.includes(v)) ? '' : 'none';
+        }
+      });
+    }
+    slicerItems.forEach(item => {
+      item.addEventListener('click', () => {
+        item.classList.toggle('active');
+        applySlicerFilter();
+      });
+    });
+    if (slicerClear) {
+      slicerClear.addEventListener('click', () => {
+        slicerItems.forEach(i => i.classList.remove('active'));
+        applySlicerFilter();
+      });
+    }
+
     const expandBtn = document.getElementById('expandAllBtn');
     const collapseBtn = document.getElementById('collapseAllBtn');
     if (expandBtn) {
