@@ -8,6 +8,12 @@ import calendar
 
 SGT_OFFSET = timedelta(hours=8)
 
+# Max age of a past occurrence that is still eligible to fire. Covers the
+# 06:05 primary tick + 06:35 safety-net tick + up to ~2h of GHA scheduling
+# drift. Beyond this, the occurrence is treated as missed — we wait for the
+# next period rather than backfilling on a wrong weekday/day-of-month.
+FIRE_WINDOW = timedelta(hours=3)
+
 
 def utc_to_sgt(dt_utc: datetime) -> datetime:
     return dt_utc + SGT_OFFSET
@@ -78,6 +84,8 @@ def is_due(schedule, now_utc: datetime):
     if occ is None:
         return False, None
     if now_utc < occ:
+        return False, occ
+    if now_utc - occ > FIRE_WINDOW:
         return False, occ
     if schedule.last_scheduled_for == occ:
         return False, occ
