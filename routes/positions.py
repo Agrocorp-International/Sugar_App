@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
 from routes.strategy_warnings import get_warning_groups
 from sqlalchemy import cast, Date, or_
+from sqlalchemy.orm.attributes import flag_modified
 from models.db import db, TradePosition, MarketPrice
 from services.request_cache import get_all_market_prices
 
@@ -336,6 +337,7 @@ def api_update():
                 else:
                     new_data[field] = value
                 pos.data = new_data
+                flag_modified(pos, 'data')
                 if sf_id not in changes_by_record:
                     changes_by_record[sf_id] = {}
                 changes_by_record[sf_id][field] = new_data[field]
@@ -359,6 +361,7 @@ def api_update():
             if sf_id in book_touched_ids and pos.book_parsed in BOOK_TO_SF:
                 new_data['Book__c'] = BOOK_TO_SF[pos.book_parsed]
             pos.data = new_data
+            flag_modified(pos, 'data')
             if sf_id not in changes_by_record:
                 changes_by_record[sf_id] = {}
             changes_by_record[sf_id]['Strategy__c'] = new_strategy
@@ -433,6 +436,7 @@ def api_update():
                                 new_data[target_name_field] = sf_ref
                                 new_data[clear_name_field] = None
                                 ref_pos.data = new_data
+                                flag_modified(ref_pos, 'data')
                 for ref_field, ref_value in ref_fields.items():
                     new_name = str(ref_value).strip() if ref_value else ""
                     if not new_name:
@@ -470,6 +474,7 @@ def api_update():
                         new_data[target_name_field] = new_name
                         new_data[clear_name_field] = None
                         ref_pos.data = new_data
+                        flag_modified(ref_pos, 'data')
         except Exception as e:
             sf_errors.append(f"SF connection failed: {e}")
 
