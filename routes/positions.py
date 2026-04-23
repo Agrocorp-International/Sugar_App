@@ -289,7 +289,7 @@ def index():
 @positions_bp.route("/positions/api/filtered-ids")
 def api_filtered_ids():
     query = _build_positions_query(request.args)
-    sf_ids = [row[0] for row in query.with_entities(TradePosition.sf_id).all()]
+    sf_ids = [p.sf_id for p in query.all()]
     return jsonify({"sf_ids": sf_ids, "count": len(sf_ids)})
 
 
