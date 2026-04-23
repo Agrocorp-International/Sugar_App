@@ -1,6 +1,7 @@
 from flask import Blueprint, redirect, url_for, flash, current_app
 from models.db import db, TradePosition, SyncLog
 from services.salesforce import get_sf_connection, list_custom_objects, fetch_trade_records
+from services.neon import build_dedup_key
 from datetime import datetime
 
 sync_bp = Blueprint("sync", __name__)
@@ -64,6 +65,18 @@ def run_sync():
                     current_app.logger.warning(
                         f"Invalid Strategy__c format for {sf_id}: '{strategy_str}'"
                     )
+            # Canonical dedup key — same formula Neon sync uses, so cross-source
+            # lookup is a single indexed equality on TradePosition.dedup_key.
+            dedup_key = build_dedup_key(
+                trade_date=rec.get("Trade_Date__c") or "",
+                contract=rec.get("Contract__c") or "",
+                account=rec.get("Account_No__c") or "",
+                price=rec.get("Price__c") or 0,
+                long_qty=rec.get("Long__c") or 0,
+                short_qty=rec.get("Short__c") or 0,
+                put_call=rec.get("Put_Call_2__c"),
+                strike=rec.get("Strike__c"),
+            )
             db.session.add(TradePosition(
                 sf_id=sf_id,
                 name=rec.get("Name", ""),
@@ -73,6 +86,8 @@ def run_sync():
                 spread=parsed_spread,
                 contract_xl=parsed_contract_xl,
                 book_parsed=parsed_book,
+                source="sf",
+                dedup_key=dedup_key,
             ))
             count += 1
 

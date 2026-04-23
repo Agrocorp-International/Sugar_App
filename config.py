@@ -42,6 +42,10 @@ class Config:
     SF_DOMAIN = os.getenv("SF_DOMAIN", "login")
     SF_TRADE_OBJECT = os.getenv("SF_TRADE_OBJECT", "")  # e.g. Trade__c
 
+    # Neon Markets (intraday trade ingestion)
+    NEON_CLIENT_ID     = os.getenv("NEON_CLIENT_ID")
+    NEON_CLIENT_SECRET = os.getenv("NEON_CLIENT_SECRET")
+
     # Cotton feature flags
     # Gate cotton → Salesforce push-back until BOOK_TO_SF mapping is confirmed.
     # Set COTTON_SF_PUSH_ENABLED=true in .env to enable.

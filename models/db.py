@@ -5,16 +5,27 @@ db = SQLAlchemy()
 
 
 class TradePosition(db.Model):
+    """Trade position row — can originate from Salesforce or Neon Markets.
+
+    Despite the name, ``sf_id`` is a position row id, NOT strictly a
+    Salesforce Id. SF-sourced rows store the 18-char SF Id; Neon-sourced
+    rows store ``"NEON_" + unique_trade_id``. Do not validate ``sf_id`` as
+    a Salesforce Id anywhere in the codebase.
+    """
     __tablename__ = "sugar_trade_positions"
 
-    sf_id = db.Column(db.String(18), primary_key=True)
+    sf_id = db.Column(db.String(64), primary_key=True)
     name = db.Column(db.String(255))
-    data = db.Column(db.JSON)  # All Salesforce fields stored as JSON
+    data = db.Column(db.JSON)  # All source fields (SF- or Neon-shaped) stored as JSON
     last_synced_at = db.Column(db.DateTime, default=datetime.utcnow)
     contract_xl = db.Column(db.String(100), nullable=True)
     instrument = db.Column(db.String(100), nullable=True)   # Strategy__c part [0]
     spread = db.Column(db.String(100), nullable=True)        # Strategy__c part [1]
     book_parsed = db.Column(db.String(100), nullable=True)   # Strategy__c part [3]
+    source = db.Column(db.String(10), nullable=False,
+                       default='sf', server_default='sf')    # 'sf' | 'neon'
+    unique_trade_id = db.Column(db.String(128), nullable=True, unique=True)
+    dedup_key = db.Column(db.String(64), nullable=True, index=True)
 
     def __repr__(self):
         return f"<TradePosition {self.sf_id} {self.name}>"

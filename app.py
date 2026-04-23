@@ -21,6 +21,7 @@ from routes.cotton_dashboard import cotton_dashboard_bp
 from routes.cotton_sync import cotton_sync_bp
 from routes.cotton_positions import cotton_positions_bp
 from routes.cotton_prices import cotton_prices_bp
+from routes.neon_sync import neon_sync_bp
 
 
 def create_app():
@@ -48,6 +49,7 @@ def create_app():
     app.register_blueprint(admin_bp,             url_prefix="/sugar")
     app.register_blueprint(wip_bp,               url_prefix="/sugar")
     app.register_blueprint(notes_bp,             url_prefix="/sugar")
+    app.register_blueprint(neon_sync_bp,         url_prefix="/sugar")
 
     # Cotton section — mounted under /cotton.
     app.register_blueprint(cotton_dashboard_bp, url_prefix="/cotton")
@@ -126,6 +128,35 @@ def create_app():
         db.session.execute(text(
             "ALTER TABLE sugar_pnl_overrides "
             "ADD COLUMN IF NOT EXISTS slot VARCHAR(10) NOT NULL DEFAULT 'current'"
+        ))
+        # Neon ingestion: widen sf_id, add source/unique_trade_id/dedup_key.
+        # Widen is metadata-only (no FK refs to sf_id). Postgres allows
+        # multiple NULLs on a UNIQUE column, so SF rows (NULL unique_trade_id)
+        # coexist fine with Neon rows (non-NULL) on a plain unique index.
+        db.session.execute(text(
+            "ALTER TABLE sugar_trade_positions "
+            "ALTER COLUMN sf_id TYPE VARCHAR(64)"
+        ))
+        db.session.execute(text(
+            "ALTER TABLE sugar_trade_positions "
+            "ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'sf', "
+            "ADD COLUMN IF NOT EXISTS unique_trade_id VARCHAR(128), "
+            "ADD COLUMN IF NOT EXISTS dedup_key VARCHAR(64)"
+        ))
+        db.session.execute(text(
+            "UPDATE sugar_trade_positions SET source = 'sf' WHERE source IS NULL"
+        ))
+        db.session.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_sugar_trade_positions_unique_trade_id "
+            "ON sugar_trade_positions (unique_trade_id)"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sugar_trade_positions_source "
+            "ON sugar_trade_positions (source)"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sugar_trade_positions_dedup_key "
+            "ON sugar_trade_positions (dedup_key)"
         ))
         db.session.commit()
 
