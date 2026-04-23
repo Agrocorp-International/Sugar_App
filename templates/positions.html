@@ -861,8 +861,12 @@
   /* ── Tag All Filtered ── */
   const tagAllBtn = document.getElementById("tagAllFilteredBtn");
   if (tagAllBtn) {
-    const tagAllModal = new bootstrap.Modal(document.getElementById("tagAllFilteredModal"));
-    tagAllBtn.addEventListener("click", () => tagAllModal.show());
+    let _tagAllModal = null;
+    function getTagAllModal() {
+      if (!_tagAllModal) _tagAllModal = new bootstrap.Modal(document.getElementById("tagAllFilteredModal"));
+      return _tagAllModal;
+    }
+    tagAllBtn.addEventListener("click", () => getTagAllModal().show());
 
     document.getElementById("tagAllApplyBtn").addEventListener("click", async function () {
       const fields = [
