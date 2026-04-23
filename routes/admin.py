@@ -29,6 +29,12 @@ def _fy_start(today: date | None = None) -> date:
     return date(year, 4, 1)
 
 
+def _prev_fy_start(today: date | None = None) -> date:
+    """Start of the previous Agrocorp FY (1 April of the year before the current FY)."""
+    fy = _fy_start(today)
+    return date(fy.year - 1, 4, 1)
+
+
 def _prev_year_end(today: date | None = None) -> date:
     """31 Dec of the previous calendar year."""
     d = today or date.today()
@@ -40,11 +46,11 @@ def _auto_tag_default_start() -> str:
 
 
 def _spec_check_default_start() -> str:
-    return (_fy_start() - timedelta(days=1)).isoformat()
+    return (_prev_fy_start() - timedelta(days=1)).isoformat()
 
 
 def _it_check_default_start() -> str:
-    return (_fy_start() - timedelta(days=2)).isoformat()
+    return (_prev_fy_start() - timedelta(days=2)).isoformat()
 
 
 def _get_xlsx_path():

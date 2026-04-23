@@ -164,6 +164,11 @@
       <i class="bi bi-exclamation-triangle me-1"></i>Strategy Warnings
       {% if invalid_strategy_count > 0 %}<span class="badge bg-dark ms-1">{{ invalid_strategy_count }}</span>{% endif %}
     </a>
+    <a href="{% if neon_untagged %}{{ url_for('positions.index') }}{% else %}{{ url_for('positions.index', neon_untagged=1) }}{% endif %}"
+       class="btn btn-sm {% if neon_untagged %}btn-warning{% else %}btn-outline-secondary{% endif %}">
+      <i class="bi bi-funnel me-1"></i>Neon Untagged
+      {% if neon_untagged %}<span class="badge bg-dark ms-1">{{ pagination.total }}</span>{% endif %}
+    </a>
     <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
       <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#d4d8dc;border-radius:2px;font-size:11px;font-weight:600;">COL</span><span class="text-muted">Editable</span>
       <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#ffc107;border-radius:2px;font-size:11px;font-weight:600;margin-left:6px;">COL</span><span class="text-muted">Calculated</span>
@@ -407,7 +412,7 @@
 
   <!-- Pagination -->
   {% if pagination.pages > 1 %}
-  {% set qs %}{% if date_filter %}&date_filter={{ date_filter }}{% endif %}{% if contract_filter %}&contract_filter={{ contract_filter }}{% endif %}{% if price_filter %}&price_filter={{ price_filter }}{% endif %}{% if book_filter %}&book_filter={{ book_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if contract_xl_filter %}&contract_xl_filter={{ contract_xl_filter }}{% endif %}{% if instrument_filter %}&instrument_filter={{ instrument_filter }}{% endif %}{% if spread_filter %}&spread_filter={{ spread_filter }}{% endif %}{% endset %}
+  {% set qs %}{% if date_filter %}&date_filter={{ date_filter }}{% endif %}{% if contract_filter %}&contract_filter={{ contract_filter }}{% endif %}{% if price_filter %}&price_filter={{ price_filter }}{% endif %}{% if book_filter %}&book_filter={{ book_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if contract_xl_filter %}&contract_xl_filter={{ contract_xl_filter }}{% endif %}{% if instrument_filter %}&instrument_filter={{ instrument_filter }}{% endif %}{% if spread_filter %}&spread_filter={{ spread_filter }}{% endif %}{% if neon_untagged %}&neon_untagged=1{% endif %}{% endset %}
   <nav class="mt-3">
     <ul class="pagination pagination-sm justify-content-center">
       <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">

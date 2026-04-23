@@ -120,6 +120,7 @@ def index():
     spread_filter      = _multi_arg("spread_filter")
     status_filter      = _multi_arg("status_filter")
     trade_id_filter    = _multi_arg("trade_id_filter")
+    neon_untagged      = request.args.get("neon_untagged") == "1"
     query = TradePosition.query.order_by(
         cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
     )
@@ -192,6 +193,11 @@ def index():
         query = query.filter(
             TradePosition.data["Trade_Key__c"].as_string().in_(trade_id_filter)
         )
+    if neon_untagged:
+        query = query.filter(
+            TradePosition.source == "neon",
+            TradePosition.instrument.is_(None),
+        )
     # Compute total PNL across all filtered rows (for display above table)
     all_filtered = query.all()
     invalid_strategy_count = len(get_warning_groups())
@@ -263,6 +269,7 @@ def index():
                            total_pnl=total_pnl, total_net_pnl=total_net_pnl,
                            total_position=total_position, total_spread_pos=total_spread_pos,
                            invalid_strategy_count=invalid_strategy_count,
+                           neon_untagged=neon_untagged,
                            price_source=price_source)
 
 
