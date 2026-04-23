@@ -306,6 +306,32 @@ class WIPChecklistItem(db.Model):
         }
 
 
+class RefreshLog(db.Model):
+    """Per-event log for scheduled refreshes (snapshot + prices ticks).
+
+    Written each time a scheduled tick actually does work. Used by the WIP
+    Refresh Log tab to show fire times and measure delay vs target. Snapshot
+    skips and idempotent no-ops are NOT logged — only real fires + errors.
+    """
+    __tablename__ = "sugar_refresh_logs"
+
+    id            = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    kind          = db.Column(db.String(16), nullable=False)   # 'snapshot' | 'prices'
+    slot          = db.Column(db.String(16), nullable=True)    # snapshot slot; None for prices
+    scheduled_for = db.Column(db.DateTime, nullable=True)      # UTC target
+    fired_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    delay_seconds = db.Column(db.Integer, nullable=True)
+    status        = db.Column(db.String(16), nullable=False, default='success')
+    detail        = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_sugar_refresh_logs_kind_fired", "kind", "fired_at"),
+    )
+
+    def __repr__(self):
+        return f"<RefreshLog {self.kind}/{self.slot or '-'} fired_at={self.fired_at}>"
+
+
 class MeetingNote(db.Model):
     __tablename__ = "sugar_meeting_notes"
 

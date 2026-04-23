@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 _SGT = timedelta(hours=8)
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response, jsonify, abort
 from sqlalchemy import cast, Date
-from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot, PnlSnapshotSchedule
+from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot, PnlSnapshotSchedule, RefreshLog
 from routes.info import (PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS,
                          _RAW_HOLIDAYS)
 from services.pnl_summary import compute_pnl_summary, compute_exposure, get_reference_snapshots
@@ -302,6 +302,7 @@ def snapshot_tick():
     now_utc = datetime.utcnow()
     schedules = PnlSnapshotSchedule.query.all()
     for sched in schedules:
+        occurrence = None
         try:
             due, occurrence = is_due(sched, now_utc)
             if not due:
@@ -311,11 +312,27 @@ def snapshot_tick():
             create_snapshot(sched.slot, source="auto", scheduled_for=occurrence)
             sched.last_scheduled_for = occurrence
             sched.last_fired_at = now_utc
+            delay = int((now_utc - occurrence).total_seconds()) if occurrence else None
+            db.session.add(RefreshLog(
+                kind='snapshot', slot=sched.slot,
+                scheduled_for=occurrence, fired_at=now_utc,
+                delay_seconds=delay, status='success',
+            ))
             db.session.commit()
             fired.append({"slot": sched.slot, "occurrence": occurrence.isoformat()})
         except Exception as e:
             db.session.rollback()
             current_app.logger.exception("Auto snapshot failed for %s", sched.slot)
+            try:
+                delay = int((now_utc - occurrence).total_seconds()) if occurrence else None
+                db.session.add(RefreshLog(
+                    kind='snapshot', slot=sched.slot,
+                    scheduled_for=occurrence, fired_at=now_utc,
+                    delay_seconds=delay, status='error', detail=str(e)[:500],
+                ))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
             errors.append({"slot": sched.slot, "error": str(e)})
     return jsonify({"fired": fired, "skipped": skipped, "errors": errors})
 

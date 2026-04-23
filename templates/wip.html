@@ -201,6 +201,50 @@
   }
   .notes-empty-emoji { font-size: 2.4rem; margin-bottom: 10px; }
   .notes-sidebar-empty { padding: 24px 12px; text-align: center; color: #9ca3af; font-size: .82rem; }
+
+  /* ── Refresh Log ──────────────────────────────────────── */
+  .refresh-stats { display: flex; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .refresh-stat-card {
+    flex: 1; min-width: 220px;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 12px 16px;
+  }
+  .refresh-stat-kind { font-size: .72rem; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 6px; }
+  .refresh-stat-row { display: flex; justify-content: space-between; font-size: .85rem; color: #374151; }
+  .refresh-stat-row + .refresh-stat-row { margin-top: 3px; }
+  .refresh-stat-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .refresh-stat-value.warn { color: #dc2626; }
+  .refresh-stat-value.mute { color: #9ca3af; font-weight: 500; }
+
+  .refresh-table-wrap {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
+  }
+  .refresh-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  .refresh-table thead th {
+    background: #f9fafb; text-align: left;
+    font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: #6b7280; padding: 10px 14px; border-bottom: 1px solid #e5e7eb;
+  }
+  .refresh-table tbody td { padding: 9px 14px; border-bottom: 1px solid #f3f4f6; font-variant-numeric: tabular-nums; }
+  .refresh-table tbody tr:last-child td { border-bottom: none; }
+  .refresh-table tbody tr:hover { background: #f9fafb; }
+
+  .refresh-kind-badge {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    font-size: .72rem; font-weight: 500;
+  }
+  .refresh-kind-snapshot { background: #eff6ff; color: #1d4ed8; }
+  .refresh-kind-prices   { background: #f0fdf4; color: #15803d; }
+  .refresh-status-success { color: #059669; }
+  .refresh-status-partial { color: #d97706; }
+  .refresh-status-error   { color: #dc2626; }
+  .refresh-delay-ok   { color: #374151; }
+  .refresh-delay-warn { color: #d97706; font-weight: 600; }
+  .refresh-delay-bad  { color: #dc2626; font-weight: 600; }
+  .refresh-empty { padding: 40px 20px; text-align: center; color: #9ca3af; }
+  .refresh-detail { color: #6b7280; font-size: .8rem; max-width: 280px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 
 <div class="wip-page">
@@ -215,6 +259,9 @@
     </button>
     <button type="button" class="wip-tab" data-panel="panel-notes">
       <i class="bi bi-journal-text me-1"></i> Meeting Notes
+    </button>
+    <button type="button" class="wip-tab" data-panel="panel-refresh">
+      <i class="bi bi-arrow-repeat me-1"></i> Refresh Log
     </button>
   </div>
 
@@ -302,6 +349,83 @@
           <div>Select a note on the left, or create a new one.</div>
         </div>
       </section>
+    </div>
+  </div>
+
+  {# ─────────────────────── Refresh Log panel ─────────────────────── #}
+  <div class="wip-tab-panel" id="panel-refresh">
+    {% macro fmt_delay(secs) %}
+      {%- if secs is none -%}—
+      {%- elif secs < 60 -%}{{ secs }}s
+      {%- elif secs < 3600 -%}{{ (secs // 60) }}m {{ secs % 60 }}s
+      {%- else -%}{{ (secs // 3600) }}h {{ ((secs % 3600) // 60) }}m
+      {%- endif -%}
+    {% endmacro %}
+    {% macro delay_class(secs) %}
+      {%- if secs is none -%}refresh-delay-ok
+      {%- elif secs > 1800 -%}refresh-delay-bad
+      {%- elif secs > 600 -%}refresh-delay-warn
+      {%- else -%}refresh-delay-ok
+      {%- endif -%}
+    {% endmacro %}
+
+    <div class="refresh-stats">
+      {% for kind, label, target_hint in [
+          ('snapshot', 'Snapshot', 'target 06:00 SGT'),
+          ('prices',   'Prices',   'target 08:00 SGT')] %}
+      {% set s = refresh_stats.get(kind, {'count': 0, 'max': none, 'median': none}) %}
+      <div class="refresh-stat-card">
+        <div class="refresh-stat-kind">{{ label }} — {{ target_hint }}</div>
+        <div class="refresh-stat-row">
+          <span>Fires logged</span>
+          <span class="refresh-stat-value{% if not s.count %} mute{% endif %}">{{ s.count }}</span>
+        </div>
+        <div class="refresh-stat-row">
+          <span>Longest delay</span>
+          <span class="refresh-stat-value{% if s.max is none %} mute{% elif s.max > 1800 %} warn{% endif %}">
+            {% if s.max is none %}—{% else %}{{ fmt_delay(s.max) }}{% endif %}
+          </span>
+        </div>
+        <div class="refresh-stat-row">
+          <span>Median delay</span>
+          <span class="refresh-stat-value{% if s.median is none %} mute{% endif %}">
+            {% if s.median is none %}—{% else %}{{ fmt_delay(s.median) }}{% endif %}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="refresh-table-wrap">
+      <table class="refresh-table">
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>Slot</th>
+            <th>Target (SGT)</th>
+            <th>Fired (SGT)</th>
+            <th>Delay</th>
+            <th>Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in refresh_logs %}
+          <tr>
+            <td><span class="refresh-kind-badge refresh-kind-{{ log.kind }}">{{ log.kind }}</span></td>
+            <td>{{ log.slot or '—' }}</td>
+            <td>{{ log.scheduled_for | sgt }}</td>
+            <td>{{ log.fired_at | sgt }}</td>
+            <td class="{{ delay_class(log.delay_seconds) }}">{{ fmt_delay(log.delay_seconds) }}</td>
+            <td class="refresh-status-{{ log.status }}">{{ log.status }}</td>
+            <td class="refresh-detail" title="{{ log.detail or '' }}">{{ log.detail or '' }}</td>
+          </tr>
+          {% endfor %}
+          {% if not refresh_logs %}
+          <tr><td colspan="7" class="refresh-empty">No refreshes logged yet. Entries appear after the next snapshot or prices tick.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
     </div>
   </div>
 </div>

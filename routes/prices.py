@@ -5,7 +5,7 @@ from services.tradestation import fetch_prices as _ts_fetch_prices, _fetch_sofr
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort, current_app
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from models.db import db, MarketPrice, WatchedContract, TradePosition
+from models.db import db, MarketPrice, WatchedContract, TradePosition, RefreshLog
 from routes.info import PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS
 
 prices_bp = Blueprint("prices", __name__)
@@ -274,6 +274,17 @@ def fetch_tradestation():
     return redirect(url_for("prices.index"))
 
 
+def _prices_target_utc(now_utc):
+    """Canonical primary-tick target (08:00 SGT = 00:00 UTC) for the SGT date
+    of now_utc. Fires before 08:00 SGT (unusual — manual dispatch) fall back
+    to yesterday's target so delay_seconds stays non-negative."""
+    now_sgt = now_utc + timedelta(hours=8)
+    target_sgt = now_sgt.replace(hour=8, minute=0, second=0, microsecond=0)
+    if now_sgt < target_sgt:
+        target_sgt -= timedelta(days=1)
+    return target_sgt - timedelta(hours=8)
+
+
 @prices_bp.route("/prices/tick", methods=["POST"])
 def prices_tick():
     """Cron entrypoint for the daily EOD sett-1 pull. Requires X-Cron-Key header
@@ -282,6 +293,9 @@ def prices_tick():
     expected_key = os.getenv("SNAPSHOT_CRON_KEY")
     if not expected_key or request.headers.get("X-Cron-Key") != expected_key:
         abort(403)
+    now_utc = datetime.utcnow()
+    target_utc = _prices_target_utc(now_utc)
+    delay = int((now_utc - target_utc).total_seconds())
     try:
         result = _run_sett1_fetch(include_live=True)
         current_app.logger.info(
@@ -289,6 +303,20 @@ def prices_tick():
             result["expected"], result["fetched"], len(result["errors"]),
             result["archived"], result["sett_date"],
         )
+        detail = (f"expected={result['expected']} fetched={result['fetched']} "
+                  f"errors={len(result['errors'])} archived={result['archived']} "
+                  f"sett_date={result['sett_date'].isoformat() if result['sett_date'] else None}")
+        try:
+            db.session.add(RefreshLog(
+                kind='prices', slot=None,
+                scheduled_for=target_utc, fired_at=now_utc,
+                delay_seconds=delay,
+                status='success' if not result["errors"] else 'partial',
+                detail=detail,
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         return jsonify({
             "expected":  result["expected"],
             "fetched":   result["fetched"],
@@ -299,6 +327,15 @@ def prices_tick():
     except Exception as e:
         current_app.logger.exception("prices_tick failed")
         db.session.rollback()
+        try:
+            db.session.add(RefreshLog(
+                kind='prices', slot=None,
+                scheduled_for=target_utc, fired_at=now_utc,
+                delay_seconds=delay, status='error', detail=str(e)[:500],
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 

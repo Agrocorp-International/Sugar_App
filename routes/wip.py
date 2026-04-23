@@ -1,7 +1,7 @@
 from datetime import datetime
 from flask import Blueprint, render_template, request, jsonify
 from sqlalchemy import func
-from models.db import db, WIPChecklistItem, MeetingNote
+from models.db import db, WIPChecklistItem, MeetingNote, RefreshLog
 from routes.notes import TITLE_MAX as NOTE_TITLE_MAX, BODY_MAX as NOTE_BODY_MAX
 
 wip_bp = Blueprint("wip", __name__)
@@ -41,13 +41,41 @@ def index():
     notes = (MeetingNote.query
              .order_by(MeetingNote.updated_at.desc(), MeetingNote.id.desc())
              .all())
+
+    refresh_logs = (RefreshLog.query
+                    .order_by(RefreshLog.fired_at.desc())
+                    .limit(200)
+                    .all())
+    refresh_stats = _refresh_stats()
+
     return render_template("wip.html",
                            open_items=open_items,
                            done_items=done_items,
                            max_len=MAX_LEN,
                            notes=notes,
                            note_title_max=NOTE_TITLE_MAX,
-                           note_body_max=NOTE_BODY_MAX)
+                           note_body_max=NOTE_BODY_MAX,
+                           refresh_logs=refresh_logs,
+                           refresh_stats=refresh_stats)
+
+
+def _refresh_stats():
+    """Per-kind stats: count, max delay, median delay (in seconds). Used by the
+    Refresh Log tab to surface worst-case drift at a glance."""
+    stats = {}
+    for kind in ('snapshot', 'prices'):
+        rows = (db.session.query(RefreshLog.delay_seconds)
+                .filter(RefreshLog.kind == kind,
+                        RefreshLog.delay_seconds.isnot(None))
+                .all())
+        delays = sorted(r[0] for r in rows)
+        if not delays:
+            stats[kind] = {"count": 0, "max": None, "median": None}
+            continue
+        mid = len(delays) // 2
+        median = delays[mid] if len(delays) % 2 else (delays[mid - 1] + delays[mid]) // 2
+        stats[kind] = {"count": len(delays), "max": delays[-1], "median": median}
+    return stats
 
 
 @wip_bp.route("/wip/api/add", methods=["POST"])
