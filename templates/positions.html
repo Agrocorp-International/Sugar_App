@@ -169,6 +169,11 @@
       <i class="bi bi-funnel me-1"></i>Neon Untagged
       {% if neon_untagged %}<span class="badge bg-dark ms-1">{{ pagination.total }}</span>{% endif %}
     </a>
+    {% if neon_untagged %}
+    <button class="btn btn-sm btn-outline-primary" id="tagAllFilteredBtn">
+      <i class="bi bi-tags me-1"></i>Tag All Filtered
+    </button>
+    {% endif %}
     <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
       <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#d4d8dc;border-radius:2px;font-size:11px;font-weight:600;">COL</span><span class="text-muted">Editable</span>
       <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#ffc107;border-radius:2px;font-size:11px;font-weight:600;margin-left:6px;">COL</span><span class="text-muted">Calculated</span>
@@ -443,6 +448,62 @@
 {% endif %}
 
 <!-- Bulk scope modal -->
+<!-- Tag All Filtered modal -->
+<div class="modal fade" id="tagAllFilteredModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0"><i class="bi bi-tags me-1"></i>Tag All Filtered Trades</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <p class="text-muted small mb-3">Leave any field blank to skip it. Only filled fields will be applied.</p>
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label small mb-1">Instrument</label>
+            <select class="form-select form-select-sm" id="taf_instrument">
+              <option value="">(skip)</option>
+              <option>Options</option><option>Futures</option><option>Spread</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-1">Spread</label>
+            <input type="text" class="form-control form-control-sm" id="taf_spread" placeholder="e.g. SBH27">
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-1">Book</label>
+            <select class="form-select form-select-sm" id="taf_book_parsed">
+              <option value="">(skip)</option>
+              <option>Alpha</option><option>Whites</option><option>Raws</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-1">Trade Code</label>
+            <input type="text" class="form-control form-control-sm" id="taf_Trade_Code__c">
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-1">Trade ID</label>
+            <input type="text" class="form-control form-control-sm" id="taf_Trade_Key__c">
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-1">Group</label>
+            <input type="text" class="form-control form-control-sm" id="taf_Trade_Group__c">
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-1">Trader</label>
+            <input type="text" class="form-control form-control-sm" id="taf_Trader__c">
+          </div>
+        </div>
+        <div id="tagAllStatus" class="mt-2 small text-muted"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="tagAllApplyBtn">Apply to All Filtered</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="bulkApplyModal" tabindex="-1" data-bs-backdrop="static">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
@@ -796,6 +857,64 @@
   }
   // Run after render
   setTimeout(fixStickyColumns, 100);
+
+  /* ── Tag All Filtered ── */
+  const tagAllBtn = document.getElementById("tagAllFilteredBtn");
+  if (tagAllBtn) {
+    const tagAllModal = new bootstrap.Modal(document.getElementById("tagAllFilteredModal"));
+    tagAllBtn.addEventListener("click", () => tagAllModal.show());
+
+    document.getElementById("tagAllApplyBtn").addEventListener("click", async function () {
+      const fields = [
+        { id: "taf_instrument",     field: "instrument" },
+        { id: "taf_spread",         field: "spread" },
+        { id: "taf_book_parsed",    field: "book_parsed" },
+        { id: "taf_Trade_Code__c",  field: "Trade_Code__c" },
+        { id: "taf_Trade_Key__c",   field: "Trade_Key__c" },
+        { id: "taf_Trade_Group__c", field: "Trade_Group__c" },
+        { id: "taf_Trader__c",      field: "Trader__c" },
+      ];
+      const filled = fields.filter(f => document.getElementById(f.id).value.trim() !== "");
+      if (!filled.length) { alert("Fill in at least one field."); return; }
+
+      const status = document.getElementById("tagAllStatus");
+      const applyBtn = document.getElementById("tagAllApplyBtn");
+      applyBtn.disabled = true;
+      status.textContent = "Fetching filtered rows…";
+
+      try {
+        const idsResp = await fetch("{{ url_for('positions.api_filtered_ids') }}" + window.location.search);
+        const { sf_ids, count } = await idsResp.json();
+        if (!count) { status.textContent = "No matching rows."; applyBtn.disabled = false; return; }
+
+        status.textContent = `Applying to ${count} row(s)…`;
+        const changes = [];
+        sf_ids.forEach(sfId => {
+          filled.forEach(f => {
+            changes.push({ sf_id: sfId, field: f.field, value: document.getElementById(f.id).value.trim() });
+          });
+        });
+
+        const saveResp = await fetch("{{ url_for('positions.api_update') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ changes, push_to_sf: false }),
+        });
+        const result = await saveResp.json();
+        if (!result.ok) {
+          alert("Save failed: " + (result.error || "Unknown error"));
+          applyBtn.disabled = false;
+          status.textContent = "";
+        } else {
+          location.reload();
+        }
+      } catch (e) {
+        alert("Network error: " + e);
+        applyBtn.disabled = false;
+        status.textContent = "";
+      }
+    });
+  }
 
 })();
 </script>

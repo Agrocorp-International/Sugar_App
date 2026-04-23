@@ -6,13 +6,101 @@ from models.db import db, TradePosition, MarketPrice
 from services.request_cache import get_all_market_prices
 
 
-def _multi_arg(name):
+def _multi_arg(name, args=None):
     """Read a multi-value query param and strip blanks.
 
     The old single-value dropdowns also arrive here (one value, no blanks),
     so this works for both modes without needing a migration path.
     """
-    return [v.strip() for v in request.args.getlist(name) if v.strip()]
+    source = args if args is not None else request.args
+    return [v.strip() for v in source.getlist(name) if v.strip()]
+
+
+def _build_positions_query(args):
+    """Return an unexecuted TradePosition query with all active filters applied."""
+    from sqlalchemy import text as sa_text
+    date_filter        = args.get("date_filter", "").strip()
+    price_filter       = args.get("price_filter", "").strip()
+    contract_xl_filter = args.get("contract_xl_filter", "").strip()
+    contract_filter    = _multi_arg("contract_filter", args)
+    book_filter        = _multi_arg("book_filter", args)
+    put_call_filter    = _multi_arg("put_call_filter", args)
+    strike_filter      = _multi_arg("strike_filter", args)
+    instrument_filter  = _multi_arg("instrument_filter", args)
+    spread_filter      = _multi_arg("spread_filter", args)
+    status_filter      = _multi_arg("status_filter", args)
+    trade_id_filter    = _multi_arg("trade_id_filter", args)
+    neon_untagged      = args.get("neon_untagged") == "1"
+    query = TradePosition.query.order_by(
+        cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
+    )
+    if date_filter:
+        query = query.filter(
+            cast(TradePosition.data["Trade_Date__c"].as_string(), Date) == date_filter
+        )
+    if contract_filter:
+        query = query.filter(
+            TradePosition.data["Contract__c"].as_string().in_(contract_filter)
+        )
+    if price_filter:
+        try:
+            price_val = float(price_filter)
+            query = query.filter(TradePosition.data["Price__c"].as_float() == price_val)
+        except ValueError:
+            pass
+    if book_filter:
+        exact = [v for v in book_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(TradePosition.data["Book__c"].as_string().in_(exact))
+        if "__empty__" in book_filter:
+            clauses.append(sa_text("(data->>'Book__c' IS NULL OR data->>'Book__c' = '')"))
+        query = query.filter(or_(*clauses))
+    if put_call_filter:
+        exact = [v for v in put_call_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(TradePosition.data["Put_Call_2__c"].as_string().in_(exact))
+        if "__empty__" in put_call_filter:
+            clauses.append(sa_text("(data->>'Put_Call_2__c' IS NULL OR data->>'Put_Call_2__c' = '')"))
+        query = query.filter(or_(*clauses))
+    if strike_filter:
+        strike_vals = []
+        for v in strike_filter:
+            try:
+                strike_vals.append(float(v))
+            except ValueError:
+                pass
+        if strike_vals:
+            query = query.filter(TradePosition.data["Strike__c"].as_float().in_(strike_vals))
+    if instrument_filter:
+        exact = [v for v in instrument_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(TradePosition.instrument.in_(exact))
+        if "__empty__" in instrument_filter:
+            clauses.append(TradePosition.instrument == None)
+        query = query.filter(or_(*clauses))
+    if spread_filter:
+        exact = [v for v in spread_filter if v != "__empty__"]
+        clauses = []
+        if exact:
+            clauses.append(TradePosition.spread.in_(exact))
+        if "__empty__" in spread_filter:
+            clauses.append(TradePosition.spread == None)
+        query = query.filter(or_(*clauses))
+    if status_filter:
+        query = query.filter(TradePosition.data["Realised__c"].as_string().in_(status_filter))
+    if contract_xl_filter:
+        query = query.filter(TradePosition.contract_xl.ilike(f"%{contract_xl_filter}%"))
+    if trade_id_filter:
+        query = query.filter(TradePosition.data["Trade_Key__c"].as_string().in_(trade_id_filter))
+    if neon_untagged:
+        query = query.filter(
+            TradePosition.source == "neon",
+            TradePosition.instrument.is_(None),
+        )
+    return query
 
 positions_bp = Blueprint("positions", __name__)
 
@@ -110,8 +198,8 @@ def index():
     from services.price_source import get_price_source
     price_source = get_price_source()
     page = request.args.get("page", 1, type=int)
-    date_filter = request.args.get("date_filter", "").strip()
-    price_filter = request.args.get("price_filter", "").strip()
+    date_filter        = request.args.get("date_filter", "").strip()
+    price_filter       = request.args.get("price_filter", "").strip()
     contract_xl_filter = request.args.get("contract_xl_filter", "").strip()
     contract_filter    = _multi_arg("contract_filter")
     book_filter        = _multi_arg("book_filter")
@@ -122,83 +210,7 @@ def index():
     status_filter      = _multi_arg("status_filter")
     trade_id_filter    = _multi_arg("trade_id_filter")
     neon_untagged      = request.args.get("neon_untagged") == "1"
-    query = TradePosition.query.order_by(
-        cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
-    )
-    if date_filter:
-        query = query.filter(
-            cast(TradePosition.data["Trade_Date__c"].as_string(), Date) == date_filter
-        )
-    if contract_filter:
-        query = query.filter(
-            TradePosition.data["Contract__c"].as_string().in_(contract_filter)
-        )
-    if price_filter:
-        try:
-            price_val = float(price_filter)
-            query = query.filter(
-                TradePosition.data["Price__c"].as_float() == price_val
-            )
-        except ValueError:
-            pass
-    if book_filter:
-        exact = [v for v in book_filter if v != "__empty__"]
-        clauses = []
-        if exact:
-            clauses.append(TradePosition.data["Book__c"].as_string().in_(exact))
-        if "__empty__" in book_filter:
-            clauses.append(sa_text("(data->>'Book__c' IS NULL OR data->>'Book__c' = '')"))
-        query = query.filter(or_(*clauses))
-    if put_call_filter:
-        exact = [v for v in put_call_filter if v != "__empty__"]
-        clauses = []
-        if exact:
-            clauses.append(TradePosition.data["Put_Call_2__c"].as_string().in_(exact))
-        if "__empty__" in put_call_filter:
-            clauses.append(sa_text("(data->>'Put_Call_2__c' IS NULL OR data->>'Put_Call_2__c' = '')"))
-        query = query.filter(or_(*clauses))
-    if strike_filter:
-        strike_vals = []
-        for v in strike_filter:
-            try:
-                strike_vals.append(float(v))
-            except ValueError:
-                pass
-        if strike_vals:
-            query = query.filter(
-                TradePosition.data["Strike__c"].as_float().in_(strike_vals)
-            )
-    if instrument_filter:
-        exact = [v for v in instrument_filter if v != "__empty__"]
-        clauses = []
-        if exact:
-            clauses.append(TradePosition.instrument.in_(exact))
-        if "__empty__" in instrument_filter:
-            clauses.append(TradePosition.instrument == None)
-        query = query.filter(or_(*clauses))
-    if spread_filter:
-        exact = [v for v in spread_filter if v != "__empty__"]
-        clauses = []
-        if exact:
-            clauses.append(TradePosition.spread.in_(exact))
-        if "__empty__" in spread_filter:
-            clauses.append(TradePosition.spread == None)
-        query = query.filter(or_(*clauses))
-    if status_filter:
-        query = query.filter(
-            TradePosition.data["Realised__c"].as_string().in_(status_filter)
-        )
-    if contract_xl_filter:
-        query = query.filter(TradePosition.contract_xl.ilike(f"%{contract_xl_filter}%"))
-    if trade_id_filter:
-        query = query.filter(
-            TradePosition.data["Trade_Key__c"].as_string().in_(trade_id_filter)
-        )
-    if neon_untagged:
-        query = query.filter(
-            TradePosition.source == "neon",
-            TradePosition.instrument.is_(None),
-        )
+    query = _build_positions_query(request.args)
     # Compute total PNL across all filtered rows (for display above table)
     all_filtered = query.all()
     invalid_strategy_count = len(get_warning_groups())
@@ -272,6 +284,13 @@ def index():
                            invalid_strategy_count=invalid_strategy_count,
                            neon_untagged=neon_untagged,
                            price_source=price_source)
+
+
+@positions_bp.route("/positions/api/filtered-ids")
+def api_filtered_ids():
+    query = _build_positions_query(request.args)
+    sf_ids = [row[0] for row in query.with_entities(TradePosition.sf_id).all()]
+    return jsonify({"sf_ids": sf_ids, "count": len(sf_ids)})
 
 
 ALLOWED_FIELDS = {
