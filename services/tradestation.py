@@ -62,6 +62,73 @@ _STRIKE_SCALE = {
 }
 
 
+def _contract_prefix(contract):
+    """Return the 2-letter product prefix (e.g. SB, SW, CT)."""
+    if not contract or len(contract) < 2:
+        return ""
+    return contract[:2].upper()
+
+
+def _is_ct_trading_session_open(now_utc):
+    """Return True only during the official ICE Cotton trading session.
+
+    Based on ICE product pages for Cotton No. 2 Futures / Options:
+      New York trading hours = 9:00 PM to 2:20 PM next day.
+
+    We gate by the session's trade date:
+      - 00:00-14:20 ET belongs to the current trade date
+      - 21:00-23:59 ET belongs to the next trade date
+      - 14:20-21:00 ET is closed (post-close / pre-open only)
+
+    A session is considered closed on weekends and on holiday trade dates.
+    """
+    now_et = now_utc.astimezone(_EXCHANGE_TZ)
+    now_date = now_et.date()
+    now_time = now_et.time()
+
+    if now_time < datetime.time(14, 20):
+        trade_date = now_date
+        return trade_date.weekday() < 5 and trade_date not in HOLIDAY_DATES
+
+    if now_time >= datetime.time(21, 0):
+        trade_date = now_date + datetime.timedelta(days=1)
+        return trade_date.weekday() < 5 and trade_date not in HOLIDAY_DATES
+
+    return False
+
+
+def _is_sb_trading_session_open(now_utc):
+    """Return True only during the official ICE Sugar No. 11 trading session."""
+    now_et = now_utc.astimezone(_EXCHANGE_TZ)
+    trade_date = now_et.date()
+    now_time = now_et.time()
+    if trade_date.weekday() >= 5 or trade_date in HOLIDAY_DATES:
+        return False
+    return datetime.time(3, 30) <= now_time < datetime.time(13, 0)
+
+
+def _is_sw_trading_session_open(now_utc):
+    """Return True only during the official ICE White Sugar trading session."""
+    now_et = now_utc.astimezone(_EXCHANGE_TZ)
+    trade_date = now_et.date()
+    now_time = now_et.time()
+    if trade_date.weekday() >= 5 or trade_date in HOLIDAY_DATES:
+        return False
+    return datetime.time(3, 45) <= now_time < datetime.time(13, 0)
+
+
+def _is_live_session_open(contract, now_utc):
+    """Return True when the contract's official trading session is open."""
+    prefix = _contract_prefix(contract)
+    if prefix == "CT":
+        return _is_ct_trading_session_open(now_utc)
+    if prefix == "SB":
+        return _is_sb_trading_session_open(now_utc)
+    if prefix == "SW":
+        return _is_sw_trading_session_open(now_utc)
+    return True
+
+
 # ── Risk-free rate ────────────────────────────────────────────────────────────
 
 # SOFR updates once per business day; 6-hour TTL is comfortably safe.
@@ -574,6 +641,8 @@ def fetch_prices(contracts):
             live_price = last if (last and last > 0) else None
         else:
             live_price = last if (last and last > 0) else None
+        if not _is_live_session_open(contract, now):
+            live_price = None
         results.append({
             "contract":   contract,
             "settlement": settlement,
@@ -686,6 +755,11 @@ def fetch_prices(contracts):
                     live_delta = _black76_delta(F_live_used, K, T_live, r, live_iv, is_call)
                 except (ValueError, ZeroDivisionError):
                     live_delta = None
+
+        if not _is_live_session_open(contract, now):
+            live_price = None
+            live_iv = None
+            live_delta = None
 
         results.append({
             "contract":   contract,

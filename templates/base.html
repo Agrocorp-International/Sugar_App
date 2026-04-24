@@ -141,6 +141,33 @@
       50%      { opacity: 0.4; transform: scale(0.7); }
     }
 
+    .market-hours-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-right: 0.9rem;
+      padding: 0.32rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,.1);
+      color: #f3f4f6;
+      font-size: 0.74rem;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .market-hours-nav i { opacity: 0.9; }
+    .market-hours-nav .mh-label {
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .market-hours-nav .mh-value {
+      opacity: 0.95;
+      font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 1199.98px) {
+      .market-hours-nav { display: none; }
+    }
+
     /* ── Navbar links: spacing + active/hover states ─────────────────── */
     .navbar-dark .navbar-nav .nav-link {
       padding: .5rem .85rem;
@@ -238,6 +265,11 @@
   <nav class="navbar navbar-expand-lg navbar-dark {% if g.price_source == 'live' %}price-live-nav{% elif g.section == 'cotton' %}cotton-nav{% else %}bg-dark{% endif %}">
     <div class="container-fluid px-4">
       {% set _section = g.section or 'sugar' %}
+      {% if _section == 'cotton' %}
+        {% set _market_hours = 'CT: 9:00 AM-2:20 AM SGT' %}
+      {% else %}
+        {% set _market_hours = 'SB: 3:30 PM-1:00 AM, SW: 4:45 PM-2:00 AM SGT' %}
+      {% endif %}
       <a class="navbar-brand" href="{{ url_for('cotton_dashboard.index') if _section == 'cotton' else url_for('dashboard.index') }}">
         <span class="me-2" style="{% if _section != 'cotton' %}filter: invert(1) grayscale(1) brightness(2);{% endif %}">{% if _section == 'cotton' %}🐑{% else %}🐜{% endif %}</span>{{ _section|title }} Trading
       </a>
@@ -246,6 +278,11 @@
            class="btn {% if _section == 'sugar' %}btn-light{% else %}btn-outline-light{% endif %}">Sugar</a>
         <a href="{{ url_for('cotton_dashboard.index') }}"
            class="btn {% if _section == 'cotton' %}btn-light{% else %}btn-outline-light{% endif %}">Cotton</a>
+      </div>
+      <div class="market-hours-nav" title="Official trading hours shown in Singapore time">
+        <i class="bi bi-clock-history"></i>
+        <span class="mh-label">SG Hours</span>
+        <span class="mh-value">{{ _market_hours }}</span>
       </div>
       <div class="d-flex align-items-center me-3">
         <div class="ps-nav-toggle btn-group" role="group" aria-label="Price source">
