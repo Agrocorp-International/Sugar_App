@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from models.db import db, RefreshLog
 from models.cotton import CottonMarketPrice, CottonWatchedContract, CottonTradePosition
 from routes.cotton_info import CT_FUTURES_EXPIRY_MAP, PARSED_CT_OPTIONS
+from services.exchange_calendar import HOLIDAY_DATES
 
 cotton_prices_bp = Blueprint("cotton_prices", __name__)
 
@@ -287,6 +288,11 @@ def prices_tick():
     if not expected_key or request.headers.get("X-Cron-Key") != expected_key:
         abort(403)
     now_utc = datetime.utcnow()
+    now_sgt = (now_utc + timedelta(hours=8)).date()
+    if now_sgt.weekday() >= 5:  # skip Sat/Sun SGT — ICE closed
+        return jsonify({"skipped": "weekend"}), 200
+    if now_sgt in HOLIDAY_DATES:  # skip NYSE holidays — ICE closed
+        return jsonify({"skipped": "holiday"}), 200
     target_utc = _prices_target_utc(now_utc)
     delay = int((now_utc - target_utc).total_seconds())
     try:

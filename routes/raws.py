@@ -419,6 +419,8 @@ def _parse_workbook(wb):
         if d.get("Shipment Period") is None:
             continue
         data = {col: d.get(col) for col in INPUT_COLS}
+        if "Physical PNL" in raw_headers and d.get("Physical PNL") is not None:
+            data["_excel_physical_pnl"] = d["Physical PNL"]
         raws_payloads.append({"book": "Raws", "row_index": idx, "data": data})
         idx += 1
 
@@ -668,6 +670,15 @@ def index():
                 row_data["Physical PNL"] = (sp - pc) * qty
             else:
                 row_data["Physical PNL"] = None
+            xl_pnl = d.get("_excel_physical_pnl")
+            computed_pnl = row_data["Physical PNL"]
+            if xl_pnl is not None and computed_pnl is not None:
+                try:
+                    if abs(float(computed_pnl) - float(xl_pnl)) > 0.01:
+                        row_data["_pnl_mismatch"] = True
+                        row_data["_excel_physical_pnl"] = xl_pnl
+                except (TypeError, ValueError):
+                    pass
             row_data["Futures PNL"] = (
                 futures_pnl_map.get(agp, 0) + futures_pnl_map.get(ags, 0)
             )
@@ -895,6 +906,15 @@ def index():
                 row_w["Physical PNL"] = (sp_w - cnf) * qty
             else:
                 row_w["Physical PNL"] = 0
+            xl_pnl_w = d.get("Physical PNL")
+            computed_pnl_w = row_w["Physical PNL"]
+            if xl_pnl_w is not None and computed_pnl_w is not None:
+                try:
+                    if abs(float(computed_pnl_w) - float(xl_pnl_w)) > 0.01:
+                        row_w["_pnl_mismatch"] = True
+                        row_w["_excel_physical_pnl"] = xl_pnl_w
+                except (TypeError, ValueError):
+                    pass
             row_w["Futures PNL"] = (
                 whites_futures_pnl_map.get(agp, 0) + whites_futures_pnl_map.get(ags, 0)
             )

@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from models.db import db, MarketPrice, WatchedContract, TradePosition, RefreshLog
 from routes.info import PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS
+from services.exchange_calendar import HOLIDAY_DATES
 
 prices_bp = Blueprint("prices", __name__)
 
@@ -294,6 +295,11 @@ def prices_tick():
     if not expected_key or request.headers.get("X-Cron-Key") != expected_key:
         abort(403)
     now_utc = datetime.utcnow()
+    now_sgt = (now_utc + timedelta(hours=8)).date()
+    if now_sgt.weekday() >= 5:  # skip Sat/Sun SGT — ICE closed
+        return jsonify({"skipped": "weekend"}), 200
+    if now_sgt in HOLIDAY_DATES:  # skip NYSE holidays — ICE closed
+        return jsonify({"skipped": "holiday"}), 200
     target_utc = _prices_target_utc(now_utc)
     delay = int((now_utc - target_utc).total_seconds())
     try:

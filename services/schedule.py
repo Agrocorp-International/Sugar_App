@@ -5,6 +5,7 @@ Kept dependency-free (stdlib only) so the tick endpoint can run fast.
 """
 from datetime import datetime, timedelta, date as date_cls
 import calendar
+from services.exchange_calendar import HOLIDAY_DATES
 
 SGT_OFFSET = timedelta(hours=8)
 
@@ -79,6 +80,11 @@ def is_due(schedule, now_utc: datetime):
     """Return (due, occurrence_utc). Due iff enabled, now past the occurrence,
     and that exact occurrence has not already been processed."""
     if not schedule.enabled:
+        return False, None
+    now_sgt = utc_to_sgt(now_utc)
+    if now_sgt.weekday() >= 5:  # skip Sat/Sun — ICE closed
+        return False, None
+    if now_sgt.date() in HOLIDAY_DATES:  # skip NYSE holidays — ICE closed
         return False, None
     occ = current_scheduled_occurrence(schedule, now_utc)
     if occ is None:

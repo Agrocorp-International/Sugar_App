@@ -85,6 +85,9 @@
   tr.hl-green  > td { background-color: #c7e9c0 !important; }
   tr.hl-red    > td { background-color: #f5b7b1 !important; }
   tr.hl-blue   > td { background-color: #c6dbef !important; }
+  tr.pnl-mismatch-row > td { background-color: #e8d5f5 !important; }
+  tr.pnl-mismatch-row > td:first-child { border-left: 4px solid #9b59b6 !important; }
+  .pnl-mismatch-icon { color: #6a0dad; font-size: 0.75em; margin-left: 3px; vertical-align: middle; }
 
   .hl-menu { position: fixed; z-index: 2000; background: #fff;
              border: 1px solid #ccc; border-radius: 6px; padding: 4px 6px;
@@ -240,14 +243,15 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr data-id="{{ row['_deal_id'] }}"{% if row.get('_highlight') %} class="hl-{{ row['_highlight'] }}"{% endif %}>
+        {%- set _tr_cls = ([] + (['hl-' ~ row['_highlight']] if row.get('_highlight') else []) + (['pnl-mismatch-row'] if row.get('_pnl_mismatch') else [])) -%}
+        <tr data-id="{{ row['_deal_id'] }}"{% if _tr_cls %} class="{{ _tr_cls | join(' ') }}"{% endif %}>
           <td class="text-muted"><input type="checkbox" class="row-check raws-check" value="{{ row['_deal_id'] }}"></td>
           {% for col in columns %}
           {% set is_editable = col not in calculated_cols %}
           <td{% if col in sep_cols %} class="col-sep-right{% if is_editable %} editable-cell{% endif %}"{% elif is_editable %} class="editable-cell"{% endif %} data-col-group="{{ group_ids.get(col_group_map.get(col, ''), '') }}"{% if is_editable %} data-field="{{ col }}" data-value="{{ row[col] if row[col] is not none else '' }}"{% endif %}>
             {%- set val = row[col] -%}
             {%- if col in pnl_cols and val is number -%}
-              <span style="color:{%- if val > 0 %}#198754{%- elif val < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ val|comma_int }}</span>
+              <span style="color:{%- if val > 0 %}#198754{%- elif val < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ val|comma_int }}</span>{%- if col == 'Physical PNL' and row.get('_pnl_mismatch') -%}<i class="bi bi-exclamation-triangle-fill pnl-mismatch-icon" title="Excel: {{ row.get('_excel_physical_pnl')|comma_int if row.get('_excel_physical_pnl') is not none else 'n/a' }}"></i>{%- endif -%}
             {%- elif val is none and col in numeric_cols -%}
               0
             {%- elif val is none -%}
@@ -399,14 +403,15 @@
       </thead>
       <tbody>
         {% for row in whites_rows %}
-        <tr data-id="{{ row['_deal_id'] }}"{% if row.get('_highlight') %} class="hl-{{ row['_highlight'] }}"{% endif %}>
+        {%- set _tr_cls = ([] + (['hl-' ~ row['_highlight']] if row.get('_highlight') else []) + (['pnl-mismatch-row'] if row.get('_pnl_mismatch') else [])) -%}
+        <tr data-id="{{ row['_deal_id'] }}"{% if _tr_cls %} class="{{ _tr_cls | join(' ') }}"{% endif %}>
           <td class="text-muted"><input type="checkbox" class="row-check whites-check" value="{{ row['_deal_id'] }}"></td>
           {% for col in whites_columns %}
           {% set is_editable = col not in whites_calculated_cols %}
           <td{% if col in whites_sep_cols %} class="col-sep-right{% if is_editable %} editable-cell{% endif %}"{% elif is_editable %} class="editable-cell"{% endif %} data-col-group="{{ whites_group_ids.get(whites_col_group_map.get(col, ''), '') }}"{% if is_editable %} data-field="{{ col }}" data-value="{{ row[col] if row[col] is not none else '' }}"{% endif %}>
             {%- set val = row[col] -%}
             {%- if col in whites_pnl_cols and val is number -%}
-              <span style="color:{%- if val > 0 %}#198754{%- elif val < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ val|comma_int }}</span>
+              <span style="color:{%- if val > 0 %}#198754{%- elif val < 0 %}#dc3545{%- else %}inherit{%- endif %};">{{ val|comma_int }}</span>{%- if col == 'Physical PNL' and row.get('_pnl_mismatch') -%}<i class="bi bi-exclamation-triangle-fill pnl-mismatch-icon" title="Excel: {{ row.get('_excel_physical_pnl')|comma_int if row.get('_excel_physical_pnl') is not none else 'n/a' }}"></i>{%- endif -%}
             {%- elif val is none and col in whites_numeric_cols -%}
               0
             {%- elif val is none -%}

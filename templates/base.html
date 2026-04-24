@@ -150,7 +150,7 @@
       border-radius: 999px;
       background: rgba(255,255,255,.1);
       color: #f3f4f6;
-      font-size: 0.74rem;
+      font-size: 0.85rem;
       line-height: 1.2;
       white-space: nowrap;
     }
@@ -279,11 +279,6 @@
         <a href="{{ url_for('cotton_dashboard.index') }}"
            class="btn {% if _section == 'cotton' %}btn-light{% else %}btn-outline-light{% endif %}">Cotton</a>
       </div>
-      <div class="market-hours-nav" title="Official trading hours shown in Singapore time">
-        <i class="bi bi-clock-history"></i>
-        <span class="mh-label">SG Hours</span>
-        <span class="mh-value">{{ _market_hours }}</span>
-      </div>
       <div class="d-flex align-items-center me-3">
         <div class="ps-nav-toggle btn-group" role="group" aria-label="Price source">
           <a href="{{ url_for('dashboard.set_price_source', source='sett1', next=g.toggle_next_url) }}"
@@ -306,6 +301,11 @@
         </span>
         {% endif %}
         {% endif %}
+      </div>
+      <div class="market-hours-nav" title="Official trading hours shown in Singapore time">
+        <i class="bi bi-clock-history"></i>
+        <span class="mh-label">Trading Hours</span>
+        <span class="mh-value">{{ _market_hours }}</span>
       </div>
       <div class="collapse navbar-collapse">
         {% set ep = request.endpoint or '' %}
