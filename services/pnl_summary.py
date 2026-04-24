@@ -41,7 +41,7 @@ def _compute_alpha_pnl(settlement_prices):
         price = d.get("Price__c")
         lots = float(d.get("Long__c") or 0) + float(d.get("Short__c") or 0)
         multiplier = _MULTIPLIERS.get(d.get("Commodity_Name__c") or "", 0)
-        commission = float(d.get("Broker_Commission__c") or 0)
+        commission = pos.commission
         if settlement is not None and price is not None and multiplier:
             pnl = (settlement - float(price)) * lots * multiplier + commission
             if d.get("Realised__c") == "Realised":

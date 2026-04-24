@@ -1,3 +1,4 @@
+import re
 from flask import Blueprint, redirect, url_for, flash, current_app
 from models.db import db, TradePosition, SyncLog
 from services.salesforce import get_sf_connection, list_custom_objects, fetch_trade_records
@@ -50,17 +51,21 @@ def run_sync():
             if not sf_id:
                 continue
             strategy_str = rec.get('Strategy__c') or ''
-            parts = strategy_str.split('-', 3)  # maxsplit=3: protects against dashes inside Contract XL
-            if len(parts) == 4:
+            parts = strategy_str.split('-', 4)  # maxsplit=4: supports 4- and 5-part formats
+            if len(parts) >= 4:
                 parsed_instrument  = parts[0].strip()
                 parsed_spread      = parts[1].strip()
                 parsed_contract_xl = parts[2].strip()
                 parsed_book        = parts[3].strip()
+                bf_tag = parts[4].strip() if len(parts) == 5 else ''
+                bf_match = re.search(r'BF=([\d.]+)', bf_tag)
+                parsed_bf = float(bf_match.group(1)) if bf_match else None
             else:
                 parsed_instrument  = None
                 parsed_spread      = None
                 parsed_contract_xl = None
                 parsed_book        = None
+                parsed_bf          = None
                 if strategy_str:
                     current_app.logger.warning(
                         f"Invalid Strategy__c format for {sf_id}: '{strategy_str}'"
@@ -86,6 +91,7 @@ def run_sync():
                 spread=parsed_spread,
                 contract_xl=parsed_contract_xl,
                 book_parsed=parsed_book,
+                bf_parsed=parsed_bf,
                 source="sf",
                 dedup_key=dedup_key,
             ))

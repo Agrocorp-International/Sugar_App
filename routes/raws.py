@@ -381,7 +381,7 @@ def _load_futures_pnl_map(settlement_prices, book='Raws'):
         lots = float(d.get("Long__c") or 0) + float(d.get("Short__c") or 0)
         multiplier = _MULTIPLIERS.get(d.get("Commodity_Name__c") or "", 0)
         pnl = (settlement - float(price)) * lots * multiplier if (settlement is not None and price is not None) else 0
-        commission = float(d.get("Broker_Commission__c") or 0)
+        commission = pos.commission
         result[pos.contract_xl] = result.get(pos.contract_xl, 0) + pnl + commission
     return result
 

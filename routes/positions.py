@@ -180,7 +180,7 @@ def compute_maps(positions, source='sett1'):
             pnl_map[pos.sf_id] = None
         trade_date = pos.data.get('Trade_Date__c')
         if trade_date == latest_date:
-            commission = pos.data.get('Broker_Commission__c') or 0
+            commission = pos.commission
             pnl_change_map[pos.sf_id] = pnl_map[pos.sf_id] + commission if pnl_map[pos.sf_id] is not None else None
         elif mkt is not None and mkt2 is not None and mult:
             pnl_change_map[pos.sf_id] = (mkt - mkt2) * (long_ + short_) * mult
@@ -223,7 +223,7 @@ def index():
     for _pos in all_filtered:
         _pnl = _all_pnl_map.get(_pos.sf_id)
         if _pnl is not None:
-            _comm = float(_pos.data.get('Broker_Commission__c') or 0)
+            _comm = _pos.commission
             total_pnl += _pnl
             total_net_pnl += _pnl + _comm
         _delta = _all_delta_map.get(_pos.sf_id)

@@ -75,7 +75,7 @@ def index():
         short_ = pos.data.get('Short__c') or 0
         ls = long_ + short_
         net_lots[key] += ls
-        commission = pos.data.get('Broker_Commission__c') or 0
+        commission = pos.commission
         commission_map[key] += commission
         if key not in delta_map:
             is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
@@ -161,7 +161,7 @@ def index():
         if mkt is None and is_option:
             mkt = 0
         trade_price = pos.data.get('Price__c')
-        commission = pos.data.get('Broker_Commission__c') or 0
+        commission = pos.commission
         mult = LOT_MULTIPLIERS.get(pos.data.get('Commodity_Name__c', ''))
         if mkt is not None and trade_price is not None and mult:
             strat_pnl[spread_contract] = (strat_pnl[spread_contract] or 0) + (mkt - trade_price) * ls * mult
@@ -215,7 +215,7 @@ def index():
         short_ = pos.data.get('Short__c') or 0
         ls = long_ + short_
         grp_lots[gkey] += ls
-        commission = pos.data.get('Broker_Commission__c') or 0
+        commission = pos.commission
         grp_commission[gkey] += commission
         is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
         if gkey not in grp_delta:
@@ -350,7 +350,7 @@ def index():
         short_ = pos.data.get('Short__c') or 0
         ls = long_ + short_
         tdr_lots[tkey] += ls
-        commission = pos.data.get('Broker_Commission__c') or 0
+        commission = pos.commission
         tdr_commission[tkey] += commission
         is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
         if tkey not in tdr_delta:
@@ -473,7 +473,7 @@ def index():
         short_ = pos.data.get('Short__c') or 0
         ls = long_ + short_
         sprd_lots[skey] += ls
-        commission = pos.data.get('Broker_Commission__c') or 0
+        commission = pos.commission
         sprd_commission[skey] += commission
         is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
         if skey not in sprd_delta:
@@ -622,7 +622,7 @@ def index():
         short_ = pos.data.get('Short__c') or 0
         ls = long_ + short_
         o_lots[okey] += ls
-        commission = pos.data.get('Broker_Commission__c') or 0
+        commission = pos.commission
         o_commission[okey] += commission
         is_option = bool(pos.data.get('Put_Call_2__c') and pos.data.get('Strike__c') is not None)
         if okey not in o_delta:

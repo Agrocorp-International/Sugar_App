@@ -22,10 +22,17 @@ class TradePosition(db.Model):
     instrument = db.Column(db.String(100), nullable=True)   # Strategy__c part [0]
     spread = db.Column(db.String(100), nullable=True)        # Strategy__c part [1]
     book_parsed = db.Column(db.String(100), nullable=True)   # Strategy__c part [3]
+    bf_parsed = db.Column(db.Float, nullable=True)           # Strategy__c part [4] BF=xxx value
     source = db.Column(db.String(10), nullable=False,
                        default='sf', server_default='sf')    # 'sf' | 'neon'
     unique_trade_id = db.Column(db.String(128), nullable=True, unique=True)
     dedup_key = db.Column(db.String(64), nullable=True, index=True)
+
+    @property
+    def commission(self):
+        if self.bf_parsed is not None:
+            return -self.bf_parsed          # BF tag is a cost, stored positive
+        return float((self.data or {}).get('Broker_Commission__c') or 0)
 
     def __repr__(self):
         return f"<TradePosition {self.sf_id} {self.name}>"

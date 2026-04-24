@@ -119,6 +119,7 @@ def run_neon_sync():
                     spread=None,
                     contract_xl=None,
                     book_parsed=None,
+                    bf_parsed=None,
                 ).on_conflict_do_nothing(index_elements=["unique_trade_id"])
                 result = db.session.execute(stmt)
                 if result.rowcount:

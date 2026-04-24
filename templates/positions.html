@@ -314,7 +314,7 @@
           <th class="calc-header">Sett-2</th>
           <th>Strike</th>
           <th>P/C</th>
-          <th>Comm</th>
+          <th style="color: #ffc107;">Comm</th>
           <th class="calc-header">Delta</th>
           <th class="calc-header">Px Tot</th>
           <th class="calc-header">Sett Tot</th>
@@ -338,7 +338,7 @@
           {% set settlement2 = settlement2_map.get(position.sf_id) %}
           {% set pnl = pnl_map.get(position.sf_id) %}
           {% set pnl_change = pnl_change_map.get(position.sf_id) %}
-          {% set commission = position.data.get('Broker_Commission__c') or 0 %}
+          {% set commission = position.commission %}
 
           <tr data-sf-id="{{ position.sf_id }}" {% if not strategy_valid %}class="table-warning"{% endif %}>
             <td><input type="checkbox" class="row-check" value="{{ position.sf_id }}"></td>
@@ -412,7 +412,7 @@
             <td class="text-num col-secondary">{{ "%.2f"|format(settlement2) if settlement2 is not none else '—' }}</td>
             <td class="editable-cell text-num col-secondary" data-field="Strike__c" data-value="{{ strike_v if strike_v is not none else '' }}">{{ "%.2f"|format(strike_v) if strike_v is not none else '' }}</td>
             <td class="editable-cell text-status col-secondary" data-field="Put_Call_2__c" data-value="{{ put_call or '' }}">{{ put_call or '' }}</td>
-            <td class="editable-cell text-num col-secondary" data-field="Broker_Commission__c" data-value="{{ position.data.get('Broker_Commission__c') or '' }}">{{ "%.2f"|format(commission) }}</td>
+            <td class="text-num col-secondary">{{ "%.2f"|format(commission) }}</td>
 
             {# ── RISK (1) ── #}
             <td class="text-num">{{ "%.2f"|format(delta) if delta is not none else '—' }}</td>
