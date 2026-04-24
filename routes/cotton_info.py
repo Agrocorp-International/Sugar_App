@@ -9,14 +9,18 @@ Formulas (ICE Cotton #2 product specifications):
     Verified: CTH26 LTD = Mon 09 Mar 2026, CTN25 LTD = Wed 09 Jul 2025,
               CTV26 LTD = Thu 08 Oct 2026.
 
-  Options expiry (LISTED months H, K, N, V, Z only):
+  Options expiry — LISTED months (H, K, N, V, Z):
     Listed-month option expires on the SAME DATE as its underlying future's LTD.
     Verified: CTN25 option expired 09 Jul 2025; CTV26 option expires 08 Oct 2026.
     Implementation: lookup underlying contract in CT_FUTURES_EXPIRY_MAP.
 
-  Serial options (F, G, J, M, Q, U, X) — NOT shown.
-    These follow a different rule (typically the last Friday of the option month
-    or similar). Pending verification before display.
+  Options expiry — SERIAL months (F, U, X only):
+    Serial option expires on the THIRD FRIDAY of the option's own month.
+    Per ICE Cotton No. 2 Options spec. Only 3 serials are listed:
+      F (Jan) → rolls into H (Mar) same year
+      U (Sep) → rolls into Z (Dec) same year
+      X (Nov) → rolls into Z (Dec) same year
+    G, J, M, Q are NOT listed CT option contracts.
 """
 import logging
 from datetime import datetime, date, timedelta
@@ -31,6 +35,7 @@ from services.exchange_calendar import (
     HOLIDAY_DATES,
     workday,
     last_biz_of_month,
+    third_friday,
 )
 
 cotton_info_bp = Blueprint("cotton_info", __name__)
@@ -39,9 +44,22 @@ cotton_info_bp = Blueprint("cotton_info", __name__)
 # ICE Cotton #2 (CT) listed contract months: March, May, July, October, December.
 CT_FUTURES_MONTHS = ["H", "K", "N", "V", "Z"]
 
-# Listed-month options only: each shares its expiry with the same-month future.
-# Serial months (F, G, J, M, Q, U, X) deliberately omitted pending verification.
+# Listed-month options share expiry with the same-month future.
+# Serial options (F, U, X) expire on the 3rd Friday of the option month.
+# ICE spec: F→H same year, U→Z same year, X→Z same year.
 CT_OPTION_TO_UNDERLYING = {m: (m, 0) for m in CT_FUTURES_MONTHS}
+CT_OPTION_TO_UNDERLYING.update({
+    "F": ("H", 0),
+    "U": ("Z", 0),
+    "X": ("Z", 0),
+})
+
+CT_SERIAL_OPTION_MONTHS = frozenset({"F", "U", "X"})
+
+# Guardrail: the full set of CT option month codes per ICE spec. G, J, M, Q are
+# explicitly forbidden — they are NOT listed as CT option contracts.
+CT_EXPECTED_OPTION_CODES = frozenset({"H", "K", "N", "V", "Z", "F", "U", "X"})
+CT_FORBIDDEN_OPTION_CODES = frozenset({"G", "J", "M", "Q"})
 
 LTD_OFFSET = -16   # last_biz counted as day 1, so -16 means 17th biz day from end
 
@@ -92,15 +110,21 @@ def _parse_ct_futures(contracts):
 
 
 def _parse_ct_options(options, futures_expiry_map):
-    """CT listed-month option expiry = underlying future's LTD."""
+    """Listed-month options: expiry = underlying future's LTD.
+       Serial options (F, U, X): expiry = 3rd Friday of option's own month."""
     result = []
     for contract, underlying in options:
         opt_parts = contract.split()
         opt_code = opt_parts[1][0]
         opt_year = 2000 + int(opt_parts[1][1:])
         opt_month = FUTURES_MONTH_CODES.get(opt_code)
-        ref_date = date(opt_year, opt_month, 1) if opt_month else None
-        expiry = futures_expiry_map.get(underlying.replace(" ", ""))
+        if opt_month is None:
+            raise ValueError(f"Unknown CT option month code: {opt_code!r} in {contract!r}")
+        ref_date = date(opt_year, opt_month, 1)
+        if opt_code in CT_SERIAL_OPTION_MONTHS:
+            expiry = third_friday(opt_year, opt_month)
+        else:
+            expiry = futures_expiry_map.get(underlying.replace(" ", ""))
         result.append({"contract": contract, "underlying": underlying,
                        "ref_date": ref_date, "expiry": expiry})
     return result
@@ -155,6 +179,17 @@ def _assert_regression():
             f"Regression: {code} option expiry drifted: "
             f"got {actual['expiry']}, expected {expected_expiry}"
         )
+
+    # Negative guard: CT option codes must exactly match ICE spec.
+    # G, J, M, Q are NOT listed CT option contracts — protects against
+    # re-introducing the old (incorrect) 7-serial list.
+    actual_codes = {o["contract"].split()[1][0] for o in PARSED_CT_OPTIONS}
+    assert actual_codes == CT_EXPECTED_OPTION_CODES, (
+        f"Regression: CT option codes drifted from ICE spec. "
+        f"Got {sorted(actual_codes)}, expected {sorted(CT_EXPECTED_OPTION_CODES)}. "
+        f"Unexpected serials (G/J/M/Q are NOT listed CT options per ICE spec): "
+        f"{sorted(actual_codes & CT_FORBIDDEN_OPTION_CODES)}"
+    )
 
 _assert_regression()
 

@@ -13,12 +13,12 @@
   <div class="card d-inline-block">
     <div class="card-header fw-semibold py-1 px-2">CT Futures (Cotton #2)</div>
     <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0">
+      <table class="table table-sm table-hover mb-0 w-auto">
         <thead class="table-dark">
           <tr>
-            <th>Contract</th>
-            <th>Ref Date</th>
-            <th>Expiry</th>
+            <th class="text-center">Contract</th>
+            <th class="text-center">Ref Date</th>
+            <th class="text-center">Expiry</th>
           </tr>
         </thead>
         <tbody>
@@ -40,18 +40,15 @@
 
   {# ── CT Options Contracts (listed months only) ────────────────────────── #}
   <div class="card d-inline-block">
-    <div class="card-header fw-semibold py-1 px-2">
-      CT Options (Cotton #2)
-      <span class="text-muted small fw-normal ms-2">listed months only</span>
-    </div>
+    <div class="card-header fw-semibold py-1 px-2">CT Options (Cotton #2)</div>
     <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0">
+      <table class="table table-sm table-hover mb-0 w-auto">
         <thead class="table-dark">
           <tr>
-            <th>Contract</th>
-            <th>Underlying</th>
-            <th>Ref Date</th>
-            <th>Expiry</th>
+            <th class="text-center">Contract</th>
+            <th class="text-center">Underlying</th>
+            <th class="text-center">Ref Date</th>
+            <th class="text-center">Expiry</th>
           </tr>
         </thead>
         <tbody>
@@ -69,23 +66,19 @@
           {% endfor %}
         </tbody>
       </table>
-      <div class="px-2 py-1 small text-muted border-top">
-        Listed-month CT options expire on the same date as the underlying future's LTD.
-        Serial options (F, G, J, M, Q, U, X) not shown — pending serial-rule verification.
-      </div>
     </div>
   </div>
 
   {# ── US Market Holidays ──────────────────────────────────────────────── #}
-  <div class="card d-inline-block" style="min-width: 420px;">
+  <div class="card d-inline-block">
     <div class="card-header fw-semibold py-1 px-2">US Market Holidays (NYSE)</div>
     <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0">
+      <table class="table table-sm table-hover mb-0 w-auto">
         <thead class="table-dark">
           <tr>
-            <th>Holiday</th>
-            <th>Date</th>
-            <th>Day</th>
+            <th class="text-center">Holiday</th>
+            <th class="text-center">Date</th>
+            <th class="text-center">Day</th>
           </tr>
         </thead>
         <tbody>

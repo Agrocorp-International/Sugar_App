@@ -63,3 +63,12 @@ def last_biz_of_month(year, month, holidays):
     else:
         first_of_next = date(year, month + 1, 1)
     return workday(first_of_next, -1, holidays)
+
+
+def third_friday(year, month):
+    """Third Friday of (year, month). Per ICE Cotton No. 2 serial-option spec.
+    No holiday adjustment applied — 3rd Fri of Jan/Sep/Nov is never a NYSE
+    holiday, and ICE's rule text does not specify a roll convention."""
+    d = date(year, month, 1)
+    d += timedelta(days=(4 - d.weekday()) % 7)   # advance to 1st Friday
+    return d + timedelta(days=14)                # +2 weeks → 3rd Friday
