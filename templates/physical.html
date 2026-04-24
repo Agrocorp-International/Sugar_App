@@ -149,6 +149,86 @@
     font-weight: 600;
   }
   .xl-slicer-item.active:hover { background: #1d4ed8; border-color: #1e40af; }
+
+  /* 2-column layout with collapsible slicer sidebar */
+  .ventures-layout {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .ventures-slicer {
+    flex: 0 0 260px;
+    min-width: 0;
+    position: sticky;
+    top: 72px;
+    transition: flex-basis 0.2s ease;
+  }
+  .ventures-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* Override the default inline-flex .xl-slicer so it fills the aside */
+  .ventures-slicer .xl-slicer {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    margin-bottom: 0;
+  }
+
+  .ventures-slicer-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 2px;
+    margin-bottom: 8px;
+  }
+  .ventures-slicer-head-title {
+    font-size: .7rem;
+    font-weight: 700;
+    color: #475569;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    flex: 1;
+  }
+  .ventures-slicer-total-count {
+    font-size: .67rem;
+    font-weight: 600;
+    color: #2563eb;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    padding: 1px 7px;
+    display: none;
+  }
+  .ventures-slicer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .xl-slicer-toggle {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    cursor: pointer;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    font-size: .9rem;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .xl-slicer-toggle:hover { color: #1d4ed8; background: #eff6ff; }
+
+  /* Collapsed state */
+  .ventures-layout.slicer-collapsed .ventures-slicer { flex-basis: 44px; }
+  .ventures-layout.slicer-collapsed .ventures-slicer-head-title,
+  .ventures-layout.slicer-collapsed .ventures-slicer-body { display: none; }
+  .ventures-layout.slicer-collapsed .ventures-slicer-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+  }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -176,29 +256,67 @@
   </div>
 </div>
 
-{% if mtm_months %}
-<div class="xl-slicer" id="mtm-slicer">
-  <div class="xl-slicer-header">
-    <span class="xl-slicer-title">Future Month</span>
-    <div class="xl-slicer-header-right">
-      <span class="xl-slicer-count" id="slicerCount"></span>
-      <button class="xl-slicer-clear disabled" id="slicerClear" title="Clear filter">
-        <i class="bi bi-funnel"></i>
-      </button>
+<div class="ventures-layout" id="venturesLayout">
+{% if mtm_months or commodities %}
+<aside class="ventures-slicer">
+  <div class="ventures-slicer-head">
+    <button type="button" class="xl-slicer-toggle" id="slicerToggle"
+            aria-label="Collapse filter" aria-expanded="true">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <span class="ventures-slicer-head-title">Filters</span>
+    <span class="ventures-slicer-total-count" id="slicerTotalCount"></span>
+  </div>
+
+  <div class="ventures-slicer-body">
+    {% if mtm_months %}
+    <div class="xl-slicer" data-field="mtm">
+      <div class="xl-slicer-header">
+        <span class="xl-slicer-title">MTM Shipment Month</span>
+        <div class="xl-slicer-header-right">
+          <span class="xl-slicer-count"></span>
+          <button class="xl-slicer-clear disabled" title="Clear filter">
+            <i class="bi bi-funnel"></i>
+          </button>
+        </div>
+      </div>
+      <div class="xl-slicer-list">
+        {% for m in mtm_months %}
+          <button class="xl-slicer-item" data-val="{{ m }}">{{ m }}</button>
+        {% endfor %}
+      </div>
     </div>
+    {% endif %}
+
+    {% if commodities %}
+    <div class="xl-slicer" data-field="commodity">
+      <div class="xl-slicer-header">
+        <span class="xl-slicer-title">Commodity</span>
+        <div class="xl-slicer-header-right">
+          <span class="xl-slicer-count"></span>
+          <button class="xl-slicer-clear disabled" title="Clear filter">
+            <i class="bi bi-funnel"></i>
+          </button>
+        </div>
+      </div>
+      <div class="xl-slicer-list">
+        {% for c in commodities %}
+          <button class="xl-slicer-item" data-val="{{ c }}">{{ c }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
   </div>
-  <div class="xl-slicer-list">
-    {% for m in mtm_months %}
-      <button class="xl-slicer-item" data-val="{{ m }}">{{ m }}</button>
-    {% endfor %}
-  </div>
-</div>
+</aside>
 {% endif %}
 
+<main class="ventures-main">
 {% if groups %}
   {% for g in groups %}
     {% set gid = 'venture-' ~ loop.index %}
-    <div class="v-card {% if g.is_unassigned %}v-unassigned{% endif %}" data-mtm="{{ g.mtm_months | join(',') }}">
+    <div class="v-card {% if g.is_unassigned %}v-unassigned{% endif %}"
+         data-mtm="{{ g.mtm_months | join(',') }}"
+         data-commodity="{{ g.commodities | join(',') }}">
       <div class="v-header" data-bs-toggle="collapse" data-bs-target="#{{ gid }}"
            aria-expanded="false" aria-controls="{{ gid }}">
         <div>
@@ -273,45 +391,104 @@
     <p class="mt-2">No data yet. Click <strong>Sync</strong> to load from Salesforce.</p>
   </div>
 {% endif %}
+</main>
+</div>
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    // Excel-style MTM slicer
-    const slicerItems = document.querySelectorAll('.xl-slicer-item');
-    const slicerClear = document.getElementById('slicerClear');
-    const slicerCount = document.getElementById('slicerCount');
-    const cards = document.querySelectorAll('.v-card[data-mtm]');
+    // Excel-style slicers (MTM Shipment Month + Commodity) — AND across slicers, OR within each
+    const slicers = [...document.querySelectorAll('.xl-slicer[data-field]')];
+    const cards = document.querySelectorAll('.v-card');
+    const totalCount = document.getElementById('slicerTotalCount');
+    const FILTERS_STORAGE_KEY = 'physicalVenturesSlicerFilters';
 
-    function activeMonths() {
-      return [...document.querySelectorAll('.xl-slicer-item.active')].map(i => i.dataset.val);
+    function slicerActive(slicer) {
+      return [...slicer.querySelectorAll('.xl-slicer-item.active')].map(i => i.dataset.val);
+    }
+    function saveFilters() {
+      const state = {};
+      slicers.forEach(s => { state[s.dataset.field] = slicerActive(s); });
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(state));
+    }
+    function loadFilters() {
+      let saved = {};
+      try {
+        saved = JSON.parse(localStorage.getItem(FILTERS_STORAGE_KEY) || '{}') || {};
+      } catch (_) { saved = {}; }
+      slicers.forEach(s => {
+        const want = new Set(saved[s.dataset.field] || []);
+        s.querySelectorAll('.xl-slicer-item').forEach(item => {
+          item.classList.toggle('active', want.has(item.dataset.val));
+        });
+      });
     }
     function applySlicerFilter() {
-      const active = activeMonths();
-      const hasFilter = active.length > 0;
-      if (slicerClear) slicerClear.classList.toggle('disabled', !hasFilter);
-      if (slicerCount) {
-        slicerCount.textContent = active.length;
-        slicerCount.style.display = hasFilter ? '' : 'none';
+      let totalActive = 0;
+      const filters = slicers.map(s => {
+        const active = slicerActive(s);
+        totalActive += active.length;
+        const count = s.querySelector('.xl-slicer-count');
+        const clear = s.querySelector('.xl-slicer-clear');
+        if (count) {
+          count.textContent = active.length;
+          count.style.display = active.length > 0 ? '' : 'none';
+        }
+        if (clear) clear.classList.toggle('disabled', active.length === 0);
+        return { field: s.dataset.field, active };
+      });
+      if (totalCount) {
+        totalCount.textContent = totalActive;
+        totalCount.style.display = totalActive > 0 ? '' : 'none';
       }
       cards.forEach(card => {
-        if (!hasFilter) {
-          card.style.display = '';
-        } else {
-          const months = card.dataset.mtm ? card.dataset.mtm.split(',') : [];
-          card.style.display = active.some(v => months.includes(v)) ? '' : 'none';
-        }
+        const visible = filters.every(({ field, active }) => {
+          if (!active.length) return true;
+          const raw = card.dataset[field] || '';
+          const values = raw ? raw.split(',') : [];
+          return active.some(v => values.includes(v));
+        });
+        card.style.display = visible ? '' : 'none';
       });
     }
-    slicerItems.forEach(item => {
-      item.addEventListener('click', () => {
-        item.classList.toggle('active');
-        applySlicerFilter();
+    slicers.forEach(s => {
+      s.querySelectorAll('.xl-slicer-item').forEach(item => {
+        item.addEventListener('click', () => {
+          item.classList.toggle('active');
+          saveFilters();
+          applySlicerFilter();
+        });
       });
+      const clear = s.querySelector('.xl-slicer-clear');
+      if (clear) {
+        clear.addEventListener('click', () => {
+          s.querySelectorAll('.xl-slicer-item').forEach(i => i.classList.remove('active'));
+          saveFilters();
+          applySlicerFilter();
+        });
+      }
     });
-    if (slicerClear) {
-      slicerClear.addEventListener('click', () => {
-        slicerItems.forEach(i => i.classList.remove('active'));
-        applySlicerFilter();
+    loadFilters();
+    applySlicerFilter();
+
+    // Collapsible slicer sidebar
+    const layoutEl = document.getElementById('venturesLayout');
+    const slicerToggle = document.getElementById('slicerToggle');
+    const SLICER_STORAGE_KEY = 'physicalVenturesSlicerCollapsed';
+
+    function setSlicerCollapsed(collapsed) {
+      layoutEl.classList.toggle('slicer-collapsed', collapsed);
+      slicerToggle.setAttribute('aria-expanded', String(!collapsed));
+      slicerToggle.setAttribute('aria-label', collapsed ? 'Expand filter' : 'Collapse filter');
+      const icon = slicerToggle.querySelector('i');
+      if (icon) icon.className = collapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+    }
+
+    if (layoutEl && slicerToggle) {
+      setSlicerCollapsed(localStorage.getItem(SLICER_STORAGE_KEY) === 'true');
+      slicerToggle.addEventListener('click', () => {
+        const nowCollapsed = !layoutEl.classList.contains('slicer-collapsed');
+        setSlicerCollapsed(nowCollapsed);
+        localStorage.setItem(SLICER_STORAGE_KEY, String(nowCollapsed));
       });
     }
 

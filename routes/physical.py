@@ -75,6 +75,11 @@ def _build_groups(rows):
                 for r in bucket_rows
                 if (r.data.get("MTM Shipment Month") or "").strip() not in ("", "-")
             }, key=_mtm_sort_key),
+            "commodities": sorted({
+                (r.data.get("Commodity: Commodity Name") or "").strip()
+                for r in bucket_rows
+                if (r.data.get("Commodity: Commodity Name") or "").strip() not in ("", "-")
+            }),
             "counterparty": _first_nonblank(
                 i.data.get("Counterparty: Account Name") for i in bucket_rows
             ),
@@ -116,6 +121,11 @@ def index():
         for r in rows
         if (r.data.get("MTM Shipment Month") or "").strip()
     }, key=_mtm_sort_key)
+    all_commodities = sorted({
+        (r.data.get("Commodity: Commodity Name") or "").strip()
+        for r in rows
+        if (r.data.get("Commodity: Commodity Name") or "").strip()
+    })
     return render_template(
         "physical.html",
         groups=groups,
@@ -124,6 +134,7 @@ def index():
         row_columns=ROW_COLUMNS,
         all_columns=all_columns,
         mtm_months=all_mtm,
+        commodities=all_commodities,
     )
 
 
