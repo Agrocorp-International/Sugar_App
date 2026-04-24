@@ -561,15 +561,19 @@ def fetch_prices(contracts):
         if settlement is None:
             errors.append(f"{contract}: barchart close missing, skipped")
             continue
-        # Check if market traded today — if not, live price should be blank
-        trade_time_str = q.get("TradeTime", "")
-        try:
-            trade_date = datetime.date.fromisoformat(trade_time_str[:10]) if trade_time_str else None
-        except (ValueError, TypeError):
-            trade_date = None
-        market_open_today = trade_date and trade_date == datetime.date.today()
-
-        live_price = _to_float(q.get("Last")) if market_open_today else None
+        # Futures live price: prefer current bid/ask mid when available, else Last.
+        # Do not gate on TradeTime's UTC date — ICE sessions cross midnight UTC,
+        # so a valid overnight quote can look "yesterday" by date even while the
+        # market is actively trading or quoting now.
+        bid = _to_float(q.get("Bid"))
+        ask = _to_float(q.get("Ask"))
+        last = _to_float(q.get("Last"))
+        if bid and ask and bid > 0 and ask > 0:
+            live_price = (bid + ask) / 2
+        elif (bid and bid > 0) or (ask and ask > 0):
+            live_price = last if (last and last > 0) else None
+        else:
+            live_price = last if (last and last > 0) else None
         results.append({
             "contract":   contract,
             "settlement": settlement,
