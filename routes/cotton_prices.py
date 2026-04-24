@@ -1,6 +1,6 @@
 """Cotton market prices — parallel to routes/prices.py, keyed on CottonMarketPrice
-and CottonWatchedContract. Cotton has no info-page calendar yet, so auto-expiry
-is not wired; users must mark contracts expired manually (UI shows a banner)."""
+and CottonWatchedContract. Expiry dates come from routes/cotton_info.py so the
+watchlist can display contract expiries and auto-expire stale contracts."""
 
 import os
 import re
@@ -11,17 +11,23 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from models.db import db, RefreshLog
 from models.cotton import CottonMarketPrice, CottonWatchedContract, CottonTradePosition
+from routes.cotton_info import CT_FUTURES_EXPIRY_MAP, PARSED_CT_OPTIONS
 
 cotton_prices_bp = Blueprint("cotton_prices", __name__)
 
 _CONTRACT_RE = re.compile(r'^CT[A-Z]\d{2}([CP]\d+)?$')
 _OPTION_RE = re.compile(r'^(CT[A-Z]\d{2})([CP])(\d+)$')
 
+# Module-level cached maps (parallel to sugar's routes/prices.py).
+OPTIONS_BASE_EXPIRY_MAP = {
+    o["contract"].replace(" ", ""): o["expiry"]
+    for o in PARSED_CT_OPTIONS
+}
+
 
 def _build_expiry_map():
-    """TODO: populate when cotton contract calendar is added (see routes/info.py
-    for the sugar analog). For now, return empty — contracts will not auto-expire."""
-    return {}
+    """Back-compat pass-through to the cached cotton option expiry map."""
+    return OPTIONS_BASE_EXPIRY_MAP
 
 
 @cotton_prices_bp.route("/prices")
@@ -48,8 +54,35 @@ def index():
             missing_prices.add(key)
     missing_prices = sorted(missing_prices)
 
-    # No auto-expiry for cotton v1 (no contract calendar). Map stays empty.
-    expiry_map = {wc.contract: None for wc in watched}
+    expiry_map = {}
+    for wc in watched:
+        c = wc.contract
+        m = _OPTION_RE.match(c)
+        if m:
+            expiry_map[c] = OPTIONS_BASE_EXPIRY_MAP.get(m.group(1))
+        else:
+            expiry_map[c] = CT_FUTURES_EXPIRY_MAP.get(c)
+
+    # Auto-expire contracts whose expiry date has passed.
+    # For options, also zero Sett-1 / Delta-1 / IV-1 since the contract no longer trades.
+    today = datetime.utcnow().date()
+    dirty = False
+    for wc in watched:
+        exp = expiry_map.get(wc.contract)
+        if not (exp and exp < today):
+            continue
+        if not wc.expired:
+            wc.expired = True
+            dirty = True
+        if _OPTION_RE.match(wc.contract):
+            mp = price_map.get(wc.contract)
+            if mp and (mp.settlement or mp.delta or mp.iv):
+                mp.settlement = 0.0
+                mp.delta = 0.0
+                mp.iv = 0.0
+                dirty = True
+    if dirty:
+        db.session.commit()
 
     pricing_date = db.session.query(db.func.max(CottonMarketPrice.sett_date)).scalar()
     sgt = timezone(timedelta(hours=8))

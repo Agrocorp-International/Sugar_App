@@ -10,9 +10,15 @@ Formulas (ICE Cotton #2 product specifications):
               CTV26 LTD = Thu 08 Oct 2026.
 
   Options expiry — LISTED months (H, K, N, V, Z):
-    Listed-month option expires on the SAME DATE as its underlying future's LTD.
-    Verified: CTN25 option expired 09 Jul 2025; CTV26 option expires 08 Oct 2026.
-    Implementation: lookup underlying contract in CT_FUTURES_EXPIRY_MAP.
+    Listed-month option expires on the last Friday preceding the underlying
+    future's first notice day by at least 5 business days.
+    Implementation:
+      1. Compute futures first notice day = 5 business days before the first
+         business day of the delivery month.
+      2. Step back 5 business days from first notice day.
+      3. Take the last Friday on or before that date.
+    Examples verified against ICE expiry pages:
+      Jul26 option LTD = 12 Jun 2026, Oct26 option LTD = 11 Sep 2026.
 
   Options expiry — SERIAL months (F, U, X only):
     Serial option expires on the THIRD FRIDAY of the option's own month.
@@ -44,7 +50,8 @@ cotton_info_bp = Blueprint("cotton_info", __name__)
 # ICE Cotton #2 (CT) listed contract months: March, May, July, October, December.
 CT_FUTURES_MONTHS = ["H", "K", "N", "V", "Z"]
 
-# Listed-month options share expiry with the same-month future.
+# Listed-month options expire on the last Friday preceding the underlying
+# future's first notice day by at least 5 business days.
 # Serial options (F, U, X) expire on the 3rd Friday of the option month.
 # ICE spec: F→H same year, U→Z same year, X→Z same year.
 CT_OPTION_TO_UNDERLYING = {m: (m, 0) for m in CT_FUTURES_MONTHS}
@@ -62,6 +69,35 @@ CT_EXPECTED_OPTION_CODES = frozenset({"H", "K", "N", "V", "Z", "F", "U", "X"})
 CT_FORBIDDEN_OPTION_CODES = frozenset({"G", "J", "M", "Q"})
 
 LTD_OFFSET = -16   # last_biz counted as day 1, so -16 means 17th biz day from end
+
+
+def _first_biz_of_month(year, month, holidays):
+    """Return the first business day of (year, month)."""
+    d = date(year, month, 1)
+    while d.weekday() >= 5 or d in holidays:
+        d += timedelta(days=1)
+    return d
+
+
+def _last_friday_on_or_before(d):
+    """Return the most recent Friday on or before *d*."""
+    return d - timedelta(days=(d.weekday() - 4) % 7)
+
+
+def _ct_regular_option_expiry(underlying, holidays):
+    """ICE CT regular option LTD.
+
+    Rule from ICE Cotton No. 2 Options spec:
+    "Last Friday preceding the first notice day for the underlying futures by
+    at least 5 business days."
+    """
+    parts = underlying.split()
+    code = parts[1][0]
+    year = 2000 + int(parts[1][1:])
+    month = FUTURES_MONTH_CODES[code]
+    first_notice_day = workday(_first_biz_of_month(year, month, holidays), -5, holidays)
+    threshold = workday(first_notice_day, -5, holidays)
+    return _last_friday_on_or_before(threshold)
 
 
 def _generate_ct_futures(years_back=YEARS_BACK, years_forward=YEARS_FORWARD):
@@ -110,7 +146,7 @@ def _parse_ct_futures(contracts):
 
 
 def _parse_ct_options(options, futures_expiry_map):
-    """Listed-month options: expiry = underlying future's LTD.
+    """Listed-month options: last Friday preceding FND by at least 5 business days.
        Serial options (F, U, X): expiry = 3rd Friday of option's own month."""
     result = []
     for contract, underlying in options:
@@ -124,7 +160,7 @@ def _parse_ct_options(options, futures_expiry_map):
         if opt_code in CT_SERIAL_OPTION_MONTHS:
             expiry = third_friday(opt_year, opt_month)
         else:
-            expiry = futures_expiry_map.get(underlying.replace(" ", ""))
+            expiry = _ct_regular_option_expiry(underlying, HOLIDAY_DATES)
         result.append({"contract": contract, "underlying": underlying,
                        "ref_date": ref_date, "expiry": expiry})
     return result
@@ -139,7 +175,7 @@ CT_FUTURES_EXPIRY_MAP = {
     f["contract"].replace(" ", ""): f["expiry"] for f in PARSED_CT_FUTURES
 }
 
-# Options computed after the futures map is available (option expiry = its underlying's LTD).
+# Options computed after the futures map is available.
 PARSED_CT_OPTIONS = _parse_ct_options(_RAW_CT_OPTIONS, CT_FUTURES_EXPIRY_MAP)
 
 
