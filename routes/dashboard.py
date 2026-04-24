@@ -5,8 +5,8 @@ _SGT = timedelta(hours=8)
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, make_response, jsonify, abort
 from sqlalchemy import cast, Date
 from models.db import db, TradePosition, SyncLog, MarketPrice, PnlSnapshot, PnlSnapshotSchedule, RefreshLog
-from routes.info import (PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS,
-                         _RAW_HOLIDAYS)
+from routes.info import PARSED_FUTURES, PARSED_SW_FUTURES, PARSED_OPTIONS
+from services.exchange_calendar import RAW_HOLIDAYS
 from services.pnl_summary import compute_pnl_summary, compute_exposure, get_reference_snapshots
 from services.physical_pnl import compute_all_pnl_totals
 from services.price_source import get_price_source
@@ -163,7 +163,7 @@ def index():
         None,
     )
     next_holiday = None
-    for name, d in _RAW_HOLIDAYS:
+    for name, d in RAW_HOLIDAYS:
         parsed = datetime.strptime(d, "%Y-%m-%d").date()
         if parsed >= as_of:
             next_holiday = {"name": name, "date": parsed}

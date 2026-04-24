@@ -29,7 +29,7 @@ import urllib.parse
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from zoneinfo import ZoneInfo
-from routes.info import _HOLIDAY_DATES
+from services.exchange_calendar import HOLIDAY_DATES
 
 BASE_URL = "https://api.tradestation.com/v3/marketdata"
 

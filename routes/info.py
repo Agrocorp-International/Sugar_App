@@ -1,19 +1,19 @@
 import logging
 from datetime import datetime, date, timedelta
 from collections import defaultdict
-import holidays as _holidays_lib
 from flask import Blueprint, render_template
 
+from services.exchange_calendar import (
+    FUTURES_MONTH_CODES,
+    YEARS_BACK,
+    YEARS_FORWARD,
+    RAW_HOLIDAYS,
+    HOLIDAY_DATES,
+    workday,
+    prev_bday,
+)
+
 info_bp = Blueprint("info", __name__)
-
-# Rolling window: 1 year of history + 3 years forward.
-_YEARS_BACK = 1
-_YEARS_FORWARD = 3
-
-_FUTURES_MONTH_CODES = {
-    "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
-    "N": 7, "Q": 8, "U": 9, "V": 10, "X": 11, "Z": 12,
-}
 
 # ICE Sugar #11 (SB) futures cycle: March (H), May (K), July (N), October (V).
 _SB_FUTURES_MONTHS = ["H", "K", "N", "V"]
@@ -32,7 +32,7 @@ _OPTION_TO_UNDERLYING = {
 }
 
 
-def _generate_futures(prefix, months, years_back=_YEARS_BACK, years_forward=_YEARS_FORWARD):
+def _generate_futures(prefix, months, years_back=YEARS_BACK, years_forward=YEARS_FORWARD):
     """Generate a futures contract list for a rolling window around today."""
     current_year = date.today().year
     contracts = []
@@ -43,58 +43,24 @@ def _generate_futures(prefix, months, years_back=_YEARS_BACK, years_forward=_YEA
     return contracts
 
 
-def _generate_options(years_back=_YEARS_BACK, years_forward=_YEARS_FORWARD):
+def _generate_options(years_back=YEARS_BACK, years_forward=YEARS_FORWARD):
     """Generate the (option, underlying) tuples for the SB options series."""
     current_year = date.today().year
     out = []
     for yr in range(current_year - years_back, current_year + years_forward + 1):
         yy = yr % 100
         for opt_code in sorted(_OPTION_TO_UNDERLYING.keys(),
-                               key=lambda c: _FUTURES_MONTH_CODES[c]):
+                               key=lambda c: FUTURES_MONTH_CODES[c]):
             und_code, year_offset = _OPTION_TO_UNDERLYING[opt_code]
             und_yy = (yr + year_offset) % 100
             out.append((f"SB {opt_code}{yy:02d}", f"SB {und_code}{und_yy:02d}"))
     return out
 
 
-def _generate_holidays(years_back=_YEARS_BACK, years_forward=_YEARS_FORWARD):
-    """Return [(name, 'YYYY-MM-DD')] for NYSE holidays in the rolling window."""
-    current_year = date.today().year
-    years = range(current_year - years_back, current_year + years_forward + 1)
-    nyse = _holidays_lib.financial_holidays("NYSE", years=years)
-    return sorted(
-        [(name, d.strftime("%Y-%m-%d")) for d, name in nyse.items()],
-        key=lambda x: x[1],
-    )
-
-
 # Module-load: build the same names the rest of the app already imports.
 _RAW_FUTURES = _generate_futures("SB", _SB_FUTURES_MONTHS)
 _RAW_SW_FUTURES = _generate_futures("SW", _SW_FUTURES_MONTHS)
 _RAW_OPTIONS = _generate_options()
-_RAW_HOLIDAYS = _generate_holidays()
-_HOLIDAY_DATES = frozenset(
-    datetime.strptime(d, "%Y-%m-%d").date() for _, d in _RAW_HOLIDAYS
-)
-
-
-def _workday(start, offset, holidays):
-    """Equivalent to Excel WORKDAY(start, offset, holidays)."""
-    current = start
-    steps = abs(offset)
-    direction = timedelta(days=1 if offset > 0 else -1)
-    while steps > 0:
-        current += direction
-        if current.weekday() < 5 and current not in holidays:
-            steps -= 1
-    return current
-
-
-def _prev_bday(d, holidays):
-    """Roll a date backward to the nearest business day."""
-    while d.weekday() >= 5 or d in holidays:
-        d -= timedelta(days=1)
-    return d
 
 
 def _parse_futures(contracts):
@@ -104,9 +70,9 @@ def _parse_futures(contracts):
         parts = c.split()
         code = parts[1][0]
         year = 2000 + int(parts[1][1:])
-        month = _FUTURES_MONTH_CODES.get(code)
+        month = FUTURES_MONTH_CODES.get(code)
         ref_date = date(year, month, 1) if month else None
-        expiry = _workday(ref_date, -1, _HOLIDAY_DATES) if ref_date else None
+        expiry = workday(ref_date, -1, HOLIDAY_DATES) if ref_date else None
         result.append({"contract": c, "ref_date": ref_date, "expiry": expiry})
     return result
 
@@ -119,11 +85,11 @@ def _parse_sw_futures(contracts):
         parts = c.split()
         code = parts[1][0]
         year = 2000 + int(parts[1][1:])
-        month = _FUTURES_MONTH_CODES.get(code)
+        month = FUTURES_MONTH_CODES.get(code)
         ref_date = date(year, month, 1) if month else None
         if ref_date:
             raw = ref_date - timedelta(days=16)
-            expiry = _prev_bday(raw, _HOLIDAY_DATES)
+            expiry = prev_bday(raw, HOLIDAY_DATES)
         else:
             expiry = None
         result.append({"contract": c, "ref_date": ref_date, "expiry": expiry})
@@ -136,7 +102,7 @@ def _parse_options(options):
         parts = contract.split()
         code = parts[1][0]
         year = 2000 + int(parts[1][1:])
-        month = _FUTURES_MONTH_CODES.get(code)
+        month = FUTURES_MONTH_CODES.get(code)
         if month:
             prev_month = month - 1 if month > 1 else 12
             prev_year = year if month > 1 else year - 1
@@ -144,7 +110,7 @@ def _parse_options(options):
         else:
             ref_date = None
         # =WORKDAY([@[Ref Date]]+13, 1, holidays)
-        expiry = _workday(ref_date + timedelta(days=13), 1, _HOLIDAY_DATES) if ref_date else None
+        expiry = workday(ref_date + timedelta(days=13), 1, HOLIDAY_DATES) if ref_date else None
         result.append({"contract": contract, "underlying": underlying,
                        "ref_date": ref_date, "expiry": expiry})
     return result
@@ -189,9 +155,9 @@ def _assert_regression():
             f"got {actual['expiry']}, expected {expected_expiry}"
         )
 
-    missing_holidays = GOLDEN_HOLIDAY_DATES - _HOLIDAY_DATES
+    missing_holidays = GOLDEN_HOLIDAY_DATES - HOLIDAY_DATES
     assert not missing_holidays, (
-        f"Regression: holiday dates missing from _HOLIDAY_DATES: "
+        f"Regression: holiday dates missing from HOLIDAY_DATES: "
         f"{sorted(missing_holidays)}"
     )
 
@@ -220,7 +186,7 @@ def index():
             "date": datetime.strptime(d, "%Y-%m-%d").date(),
             "day": datetime.strptime(d, "%Y-%m-%d").strftime("%A"),
         }
-        for name, d in _RAW_HOLIDAYS
+        for name, d in RAW_HOLIDAYS
     ], key=lambda x: x["date"])
 
     upcoming_date = next(

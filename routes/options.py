@@ -12,7 +12,8 @@ from services.tradestation import (
     _black76_price, _black76_delta, _black76_gamma, _black76_vega, _black76_theta,
     _RISK_FREE_RATE_FALLBACK as _RISK_FREE_RATE, _fetch_sofr,
 )
-from routes.info import _workday, _HOLIDAY_DATES, PARSED_FUTURES
+from routes.info import PARSED_FUTURES
+from services.exchange_calendar import workday, HOLIDAY_DATES
 from routes.positions import build_contract_key, LOT_MULTIPLIERS_BY_PREFIX as _MULTIPLIERS
 from services.iv_utils import calculate_scenario_iv
 from services.request_cache import get_all_positions
@@ -79,7 +80,7 @@ def _compute_greeks(legs_pos, price_map, as_of, source='sett1'):
         if expiry is None:
             excluded += 1
             continue
-        T = (expiry - _workday(today, -1, _HOLIDAY_DATES)).days / 365.0
+        T = (expiry - workday(today, -1, HOLIDAY_DATES)).days / 365.0
         if T <= 0:
             excluded += 1
             continue
@@ -789,7 +790,7 @@ def sim_update_option(oid):
             setattr(row, field, float(body[field]))
     # Recompute Greeks if IV or underlying changed
     if row.iv and row.iv > 0 and row.underlying_price and row.expiry_date:
-        T = (row.expiry_date - _workday(date.today(), -1, _HOLIDAY_DATES)).days / 365.0
+        T = (row.expiry_date - workday(date.today(), -1, HOLIDAY_DATES)).days / 365.0
         is_call = row.put_call == 'Call'
         if T > 0:
             try:

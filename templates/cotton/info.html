@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Info - Cotton Trading{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h4 class="mb-0">Info</h4>
+  <p class="text-muted small mt-1">Reference data for cotton (CT) futures, options, and NYSE market holidays.</p>
+</div>
+
+<div class="d-flex align-items-start gap-4 flex-wrap">
+
+  {# ── CT Futures Contracts ─────────────────────────────────────────────── #}
+  <div class="card d-inline-block">
+    <div class="card-header fw-semibold py-1 px-2">CT Futures (Cotton #2)</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Contract</th>
+            <th>Ref Date</th>
+            <th>Expiry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in futures %}
+            <tr>
+              <td class="font-monospace">{{ f.contract }}</td>
+              <td class="text-nowrap">
+                {% if f.ref_date %}{{ f.ref_date.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+              <td class="text-nowrap">
+                {% if f.expiry %}{{ f.expiry.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── CT Options Contracts (listed months only) ────────────────────────── #}
+  <div class="card d-inline-block">
+    <div class="card-header fw-semibold py-1 px-2">
+      CT Options (Cotton #2)
+      <span class="text-muted small fw-normal ms-2">listed months only</span>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Contract</th>
+            <th>Underlying</th>
+            <th>Ref Date</th>
+            <th>Expiry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in options %}
+            <tr>
+              <td class="font-monospace">{{ o.contract }}</td>
+              <td class="font-monospace">{{ o.underlying }}</td>
+              <td class="text-nowrap">
+                {% if o.ref_date %}{{ o.ref_date.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+              <td class="text-nowrap">
+                {% if o.expiry %}{{ o.expiry.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-2 py-1 small text-muted border-top">
+        Listed-month CT options expire on the same date as the underlying future's LTD.
+        Serial options (F, G, J, M, Q, U, X) not shown — pending serial-rule verification.
+      </div>
+    </div>
+  </div>
+
+  {# ── US Market Holidays ──────────────────────────────────────────────── #}
+  <div class="card d-inline-block" style="min-width: 420px;">
+    <div class="card-header fw-semibold py-1 px-2">US Market Holidays (NYSE)</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Holiday</th>
+            <th>Date</th>
+            <th>Day</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for year, entries in grouped.items() %}
+            <tr class="table-secondary">
+              <td colspan="3" class="fw-semibold small text-muted py-1">{{ year }}</td>
+            </tr>
+            {% for h in entries %}
+              <tr {% if h.date == upcoming_date %}class="table-warning"{% endif %}>
+                <td>
+                  {{ h.name }}
+                  {% if h.date == upcoming_date %}
+                    <span class="badge bg-warning text-dark ms-1 small">Next</span>
+                  {% endif %}
+                </td>
+                <td class="text-nowrap">{{ h.date.strftime("%d %b %Y") }}</td>
+                <td class="text-muted">{{ h.day }}</td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

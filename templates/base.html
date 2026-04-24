@@ -340,20 +340,35 @@
             </ul>
           </li>
           {% elif _section == 'cotton' %}
+          {% set cotton_others_eps = ['cotton_info.index'] %}
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('cotton_dashboard.index') }}">
+            <a class="nav-link {% if ep == 'cotton_dashboard.index' %}active{% endif %}" href="{{ url_for('cotton_dashboard.index') }}">
               <i class="bi bi-speedometer2 me-1"></i>Dashboard
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('cotton_positions.index') }}">
+            <a class="nav-link {% if ep == 'cotton_positions.index' %}active{% endif %}" href="{{ url_for('cotton_positions.index') }}">
               <i class="bi bi-table me-1"></i>FUTS Trades
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('cotton_prices.index') }}">
+            <a class="nav-link {% if ep == 'cotton_prices.index' %}active{% endif %}" href="{{ url_for('cotton_prices.index') }}">
               <i class="bi bi-currency-dollar me-1"></i>Prices
             </a>
+          </li>
+          <li class="nav-item dropdown nav-others">
+            <a class="nav-link dropdown-toggle {% if ep in cotton_others_eps %}active{% endif %}"
+               href="#" id="cottonOthersDropdown" role="button"
+               data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-three-dots me-1"></i>Others
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark" aria-labelledby="cottonOthersDropdown">
+              <li>
+                <a class="dropdown-item {% if ep == 'cotton_info.index' %}active{% endif %}" href="{{ url_for('cotton_info.index') }}">
+                  <i class="bi bi-calendar-event me-2"></i>Info
+                </a>
+              </li>
+            </ul>
           </li>
           {% endif %}
         </ul>
