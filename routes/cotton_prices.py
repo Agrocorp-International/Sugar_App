@@ -2,13 +2,14 @@
 and CottonWatchedContract. Cotton has no info-page calendar yet, so auto-expiry
 is not wired; users must mark contracts expired manually (UI shows a banner)."""
 
+import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from services.tradestation import fetch_prices as _ts_fetch_prices, _fetch_sofr
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort, current_app
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from models.db import db
+from models.db import db, RefreshLog
 from models.cotton import CottonMarketPrice, CottonWatchedContract, CottonTradePosition
 
 cotton_prices_bp = Blueprint("cotton_prices", __name__)
@@ -51,18 +52,118 @@ def index():
     expiry_map = {wc.contract: None for wc in watched}
 
     pricing_date = db.session.query(db.func.max(CottonMarketPrice.sett_date)).scalar()
+    sgt = timezone(timedelta(hours=8))
+
+    def _to_sgt(dt):
+        if dt is None:
+            return None
+        return dt.replace(tzinfo=timezone.utc).astimezone(sgt)
+
+    last_sett_sgt = _to_sgt(db.session.query(db.func.max(CottonMarketPrice.sett_fetched_at)).scalar())
+    last_live_sgt = _to_sgt(db.session.query(db.func.max(CottonMarketPrice.live_fetched_at)).scalar())
 
     return render_template(
         "cotton/prices.html",
         watched=watched, price_map=price_map,
         missing_prices=missing_prices, expiry_map=expiry_map,
         pricing_date=pricing_date,
+        last_sett_sgt=last_sett_sgt,
+        last_live_sgt=last_live_sgt,
     )
+
+
+def _run_sett1_fetch(include_live=False):
+    """Sugar-style Sett-1 fetch path for cotton.
+
+    Fetches all active watchlist contracts, archives Sett-1 -> Sett-2 only when
+    TradeStation publishes a newer settlement date, and stamps separate fetch
+    timestamps for Sett-1 and Live.
+    """
+    contracts = [
+        wc.contract
+        for wc in CottonWatchedContract.query.filter_by(expired=False)
+                                             .order_by(CottonWatchedContract.sort_order,
+                                                       CottonWatchedContract.created_at)
+                                             .all()
+    ]
+    expected = len(contracts)
+    if not contracts:
+        return {"expected": 0, "fetched": 0, "errors": [], "sett_date": None, "archived": False}
+
+    results, errors, sett_date = _ts_fetch_prices(contracts)
+    archived = False
+
+    if results:
+        if sett_date is not None:
+            old_sett_date = db.session.query(db.func.max(CottonMarketPrice.sett_date)).scalar()
+            if old_sett_date is not None and sett_date > old_sett_date:
+                db.session.execute(
+                    db.update(CottonMarketPrice).values(
+                        settlement2=CottonMarketPrice.settlement,
+                        delta2=CottonMarketPrice.delta,
+                    )
+                )
+                archived = True
+
+        now_utc = datetime.utcnow()
+        for r in results:
+            r["sett_fetched_at"] = now_utc
+            if include_live:
+                r["live_fetched_at"] = now_utc
+
+        stmt = pg_insert(CottonMarketPrice).values(results)
+        update_cols = {
+            "settlement": stmt.excluded.settlement,
+            "delta": stmt.excluded.delta,
+            "iv": stmt.excluded.iv,
+            "sett_date": stmt.excluded.sett_date,
+            "fetched_at": stmt.excluded.fetched_at,
+            "sett_fetched_at": stmt.excluded.sett_fetched_at,
+        }
+        if include_live:
+            update_cols.update({
+                "live_price": stmt.excluded.live_price,
+                "live_iv": stmt.excluded.live_iv,
+                "live_delta": stmt.excluded.live_delta,
+                "live_fetched_at": stmt.excluded.live_fetched_at,
+            })
+        stmt = stmt.on_conflict_do_update(index_elements=["contract"], set_=update_cols)
+        db.session.execute(stmt)
+        db.session.commit()
+
+    return {
+        "expected": expected,
+        "fetched": len(results),
+        "errors": errors,
+        "sett_date": sett_date,
+        "archived": archived,
+    }
 
 
 @cotton_prices_bp.route("/prices/fetch", methods=["POST"])
 def fetch_tradestation():
     mode = request.form.get("mode", "all")
+
+    if mode == "sett1":
+        try:
+            result = _run_sett1_fetch()
+        except Exception as e:
+            flash(f"TradeStation fetch error: {e}", "danger")
+            return redirect(url_for("cotton_prices.index"))
+        if result["expected"] == 0:
+            flash("No active cotton contracts in watchlist.", "warning")
+            return redirect(url_for("cotton_prices.index"))
+        if result["fetched"] > 0:
+            r, sofr_date = _fetch_sofr()
+            sofr_label = f"{r*100:.3f}% (as of {sofr_date})" if sofr_date else f"{r*100:.3f}% (fallback)"
+            sett_label = result["sett_date"].strftime('%d %b %Y') if result["sett_date"] else "unknown"
+            flash(f"Fetched {result['fetched']} cotton price(s). Pricing date: {sett_label}. SOFR = {sofr_label}", "success")
+        else:
+            flash("No cotton prices returned from TradeStation.", "warning")
+        for msg in result["errors"]:
+            flash(msg, "warning")
+        return redirect(url_for("cotton_prices.index"))
+
     contracts = [
         wc.contract
         for wc in CottonWatchedContract.query.filter_by(expired=False)
@@ -81,7 +182,7 @@ def fetch_tradestation():
         return redirect(url_for("cotton_prices.index"))
 
     if results:
-        if mode in ("sett1", "all") and sett_date is not None:
+        if mode == "all" and sett_date is not None:
             old_sett_date = db.session.query(db.func.max(CottonMarketPrice.sett_date)).scalar()
             if old_sett_date is not None and sett_date > old_sett_date:
                 db.session.execute(
@@ -91,33 +192,35 @@ def fetch_tradestation():
                     )
                 )
 
+        now_utc = datetime.utcnow()
+        for r in results:
+            if mode == "all":
+                r["sett_fetched_at"] = now_utc
+            if mode in ("live", "all"):
+                r["live_fetched_at"] = now_utc
+
         stmt = pg_insert(CottonMarketPrice).values(results)
-        if mode == "sett1":
-            update_cols = {
-                "settlement": stmt.excluded.settlement,
-                "delta":      stmt.excluded.delta,
-                "iv":         stmt.excluded.iv,
-                "sett_date":  stmt.excluded.sett_date,
-                "fetched_at": stmt.excluded.fetched_at,
-            }
-        elif mode == "live":
+        if mode == "live":
             update_cols = {
                 "live_price": stmt.excluded.live_price,
-                "live_iv":    stmt.excluded.live_iv,
+                "live_iv": stmt.excluded.live_iv,
                 "live_delta": stmt.excluded.live_delta,
-                "sett_date":  stmt.excluded.sett_date,
+                "sett_date": stmt.excluded.sett_date,
                 "fetched_at": stmt.excluded.fetched_at,
+                "live_fetched_at": stmt.excluded.live_fetched_at,
             }
         else:
             update_cols = {
                 "settlement": stmt.excluded.settlement,
-                "delta":      stmt.excluded.delta,
-                "iv":         stmt.excluded.iv,
+                "delta": stmt.excluded.delta,
+                "iv": stmt.excluded.iv,
                 "live_price": stmt.excluded.live_price,
-                "live_iv":    stmt.excluded.live_iv,
+                "live_iv": stmt.excluded.live_iv,
                 "live_delta": stmt.excluded.live_delta,
-                "sett_date":  stmt.excluded.sett_date,
+                "sett_date": stmt.excluded.sett_date,
                 "fetched_at": stmt.excluded.fetched_at,
+                "sett_fetched_at": stmt.excluded.sett_fetched_at,
+                "live_fetched_at": stmt.excluded.live_fetched_at,
             }
         stmt = stmt.on_conflict_do_update(index_elements=["contract"], set_=update_cols)
         db.session.execute(stmt)
@@ -133,6 +236,67 @@ def fetch_tradestation():
         flash(msg, "warning")
 
     return redirect(url_for("cotton_prices.index"))
+
+
+def _prices_target_utc(now_utc):
+    """Canonical primary-tick target (08:00 SGT = 00:00 UTC)."""
+    now_sgt = now_utc + timedelta(hours=8)
+    target_sgt = now_sgt.replace(hour=8, minute=0, second=0, microsecond=0)
+    if now_sgt < target_sgt:
+        target_sgt -= timedelta(days=1)
+    return target_sgt - timedelta(hours=8)
+
+
+@cotton_prices_bp.route("/prices/tick", methods=["POST"])
+def prices_tick():
+    """Cron entrypoint for cotton's daily EOD Sett-1 pull."""
+    expected_key = os.getenv("SNAPSHOT_CRON_KEY")
+    if not expected_key or request.headers.get("X-Cron-Key") != expected_key:
+        abort(403)
+    now_utc = datetime.utcnow()
+    target_utc = _prices_target_utc(now_utc)
+    delay = int((now_utc - target_utc).total_seconds())
+    try:
+        result = _run_sett1_fetch(include_live=True)
+        current_app.logger.info(
+            "cotton_prices_tick expected=%d fetched=%d errors=%d archived=%s sett_date=%s",
+            result["expected"], result["fetched"], len(result["errors"]),
+            result["archived"], result["sett_date"],
+        )
+        detail = (f"cotton expected={result['expected']} fetched={result['fetched']} "
+                  f"errors={len(result['errors'])} archived={result['archived']} "
+                  f"sett_date={result['sett_date'].isoformat() if result['sett_date'] else None}")
+        try:
+            db.session.add(RefreshLog(
+                kind='cotton_prices', slot=None,
+                scheduled_for=target_utc, fired_at=now_utc,
+                delay_seconds=delay,
+                status='success' if not result["errors"] else 'partial',
+                detail=detail,
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return jsonify({
+            "expected": result["expected"],
+            "fetched": result["fetched"],
+            "errors": result["errors"],
+            "sett_date": result["sett_date"].isoformat() if result["sett_date"] else None,
+            "archived": result["archived"],
+        })
+    except Exception as e:
+        current_app.logger.exception("cotton_prices_tick failed")
+        db.session.rollback()
+        try:
+            db.session.add(RefreshLog(
+                kind='cotton_prices', slot=None,
+                scheduled_for=target_utc, fired_at=now_utc,
+                delay_seconds=delay, status='error', detail=str(e)[:500],
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @cotton_prices_bp.route("/prices/clear", methods=["POST"])

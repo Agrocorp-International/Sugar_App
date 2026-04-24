@@ -48,6 +48,8 @@ class CottonMarketPrice(db.Model):
     live_delta = db.Column(db.Float)
     sett_date  = db.Column(db.Date)
     fetched_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sett_fetched_at = db.Column(db.DateTime)
+    live_fetched_at = db.Column(db.DateTime)
 
     def __repr__(self):
         return f"<CottonMarketPrice {self.contract} {self.settlement}>"

@@ -236,6 +236,7 @@
   }
   .refresh-kind-snapshot { background: #eff6ff; color: #1d4ed8; }
   .refresh-kind-prices   { background: #f0fdf4; color: #15803d; }
+  .refresh-kind-cotton-prices { background: #fff7ed; color: #c2410c; }
   .refresh-status-success { color: #059669; }
   .refresh-status-partial { color: #d97706; }
   .refresh-status-error   { color: #dc2626; }
@@ -368,11 +369,24 @@
       {%- else -%}refresh-delay-ok
       {%- endif -%}
     {% endmacro %}
+    {% macro kind_label(kind) %}
+      {%- if kind == 'snapshot' -%}Snapshot
+      {%- elif kind == 'prices' -%}Sugar Prices
+      {%- elif kind == 'cotton_prices' -%}Cotton Prices
+      {%- else -%}{{ kind }}
+      {%- endif -%}
+    {% endmacro %}
+    {% macro kind_css(kind) %}
+      {%- if kind == 'cotton_prices' -%}cotton-prices
+      {%- else -%}{{ kind }}
+      {%- endif -%}
+    {% endmacro %}
 
     <div class="refresh-stats">
       {% for kind, label, target_hint in [
           ('snapshot', 'Snapshot', 'target 06:00 SGT'),
-          ('prices',   'Prices',   'target 08:00 SGT')] %}
+          ('prices',   'Sugar Prices',   'target 08:00 SGT'),
+          ('cotton_prices', 'Cotton Prices', 'target 08:00 SGT')] %}
       {% set s = refresh_stats.get(kind, {'count': 0, 'max': none, 'median': none}) %}
       <div class="refresh-stat-card">
         <div class="refresh-stat-kind">{{ label }} — {{ target_hint }}</div>
@@ -412,7 +426,7 @@
         <tbody>
           {% for log in refresh_logs %}
           <tr>
-            <td><span class="refresh-kind-badge refresh-kind-{{ log.kind }}">{{ log.kind }}</span></td>
+            <td><span class="refresh-kind-badge refresh-kind-{{ kind_css(log.kind) }}">{{ kind_label(log.kind) }}</span></td>
             <td>{{ log.slot or '—' }}</td>
             <td>{{ log.scheduled_for | sgt }}</td>
             <td>{{ log.fired_at | sgt }}</td>

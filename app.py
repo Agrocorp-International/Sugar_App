@@ -3,6 +3,7 @@ from urllib.parse import urlencode
 from flask import Flask, g, request, redirect, url_for
 from config import Config
 from models.db import db
+from models.cotton import CottonMarketPrice
 from routes.dashboard import dashboard_bp
 from routes.positions import positions_bp
 from routes.sync import sync_bp
@@ -159,6 +160,11 @@ def create_app():
         db.session.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_sugar_trade_positions_dedup_key "
             "ON sugar_trade_positions (dedup_key)"
+        ))
+        db.session.execute(text(
+            "ALTER TABLE cotton_market_prices "
+            "ADD COLUMN IF NOT EXISTS sett_fetched_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS live_fetched_at TIMESTAMP"
         ))
         db.session.commit()
 

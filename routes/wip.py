@@ -63,7 +63,7 @@ def _refresh_stats():
     """Per-kind stats: count, max delay, median delay (in seconds). Used by the
     Refresh Log tab to surface worst-case drift at a glance."""
     stats = {}
-    for kind in ('snapshot', 'prices'):
+    for kind in ('snapshot', 'prices', 'cotton_prices'):
         rows = (db.session.query(RefreshLog.delay_seconds)
                 .filter(RefreshLog.kind == kind,
                         RefreshLog.delay_seconds.isnot(None))
