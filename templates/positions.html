@@ -156,20 +156,26 @@
   thead .sticky-col { z-index: 12 !important; }
 </style>
 
+{% set active_count = (contract_filter|length + book_filter|length + status_filter|length + put_call_filter|length + strike_filter|length + instrument_filter|length + spread_filter|length + trade_id_filter|length)
+  + (1 if date_filter else 0) + (1 if price_filter else 0) + (1 if contract_xl_filter else 0)
+  + (1 if neon_untagged else 0) %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h4 class="mb-0">FUTS Trades</h4>
   <div class="d-flex align-items-center gap-2">
     <span class="text-muted small">{{ pagination.total }} records</span>
-    <a href="{{ url_for('strategy_warnings.index') }}" class="btn btn-sm {% if invalid_strategy_count > 0 %}btn-warning{% else %}btn-outline-secondary{% endif %}">
+    <button type="button"
+            class="btn btn-sm {% if invalid_strategy_count > 0 %}btn-warning{% else %}btn-outline-secondary{% endif %}"
+            data-bs-toggle="collapse" data-bs-target="#strategyWarningsPanel"
+            aria-expanded="false" aria-controls="strategyWarningsPanel">
       <i class="bi bi-exclamation-triangle me-1"></i>Strategy Warnings
       {% if invalid_strategy_count > 0 %}<span class="badge bg-dark ms-1">{{ invalid_strategy_count }}</span>{% endif %}
-    </a>
+    </button>
     <a href="{% if neon_untagged %}{{ url_for('positions.index') }}{% else %}{{ url_for('positions.index', neon_untagged=1) }}{% endif %}"
        class="btn btn-sm {% if neon_untagged %}btn-warning{% else %}btn-outline-secondary{% endif %}">
       <i class="bi bi-funnel me-1"></i>Neon Untagged
       {% if neon_untagged %}<span class="badge bg-dark ms-1">{{ pagination.total }}</span>{% endif %}
     </a>
-    {% if neon_untagged %}
+    {% if active_count > 0 %}
     <button class="btn btn-sm btn-outline-primary" id="tagAllFilteredBtn">
       <i class="bi bi-tags me-1"></i>Tag All Filtered
     </button>
@@ -181,8 +187,49 @@
   </div>
 </div>
 
-{% set active_count = (contract_filter|length + book_filter|length + status_filter|length + put_call_filter|length + strike_filter|length + instrument_filter|length + spread_filter|length + trade_id_filter|length)
-  + (1 if date_filter else 0) + (1 if price_filter else 0) + (1 if contract_xl_filter else 0) %}
+<div class="collapse mb-3" id="strategyWarningsPanel">
+  {% if warning_groups %}
+  <div class="alert alert-warning py-2 mb-2 small">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>{{ warning_groups|length }}</strong> trade group(s) have an empty or malformed <code>Strategy__c</code> field and a non-zero net position.
+    Fix the value in Salesforce, then re-sync.
+  </div>
+  <div class="d-inline-block">
+    <table class="table table-hover table-sm mb-0 text-center" style="white-space: nowrap;">
+      <thead class="table-dark">
+        <tr>
+          <th>Trade Date</th>
+          <th>Contract</th>
+          <th>Trade Price</th>
+          <th>Long</th>
+          <th>Short</th>
+          <th>Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in warning_groups %}
+        <tr class="table-warning">
+          <td>{{ g.trade_date or '—' }}</td>
+          <td>{{ g.contract|format_contract or '—' }}</td>
+          <td>{{ "%.2f"|format(g.price) if g.price is not none else '—' }}</td>
+          <td>{{ g.long | int if g.long == g.long | int else g.long }}</td>
+          <td>{{ g.short | int if g.short == g.short | int else g.short }}</td>
+          <td class="fw-semibold {% if g.net > 0 %}text-success{% elif g.net < 0 %}text-danger{% endif %}">
+            {{ g.net | int if g.net == g.net | int else g.net }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-success py-2 mb-0 small">
+    <i class="bi bi-check-circle-fill me-1"></i>
+    No open positions with missing Strategy field.
+  </div>
+  {% endif %}
+</div>
+
 <form method="GET" action="{{ url_for('positions.index') }}" class="filter-bar">
   <input type="date" name="date_filter" value="{{ date_filter }}" class="filter-ctrl" title="Trade Date">
   {{ multi_filter('contract_filter', 'Contract', contract_options, contract_filter) }}
@@ -195,7 +242,8 @@
   {{ multi_filter('spread_filter', 'Spread', spread_options, spread_filter, allow_empty=True) }}
   <input type="text" name="contract_xl_filter" class="filter-ctrl" value="{{ contract_xl_filter }}" placeholder="XL Ref...">
   {{ multi_filter('trade_id_filter', 'Trade ID', trade_id_options, trade_id_filter) }}
-  <button type="submit" class="filter-apply">Apply</button>
+  {# Hidden submit: keeps Enter-key submission from text inputs working; auto-apply JS fires form.submit() on change. #}
+  <button type="submit" class="filter-apply" style="display:none;" tabindex="-1" aria-hidden="true">Apply</button>
   {% if active_count > 0 %}
     <a href="{{ url_for('positions.index') }}" class="filter-clear">Clear ({{ active_count }})</a>
   {% endif %}
@@ -921,6 +969,37 @@
   }
 
 })();
+</script>
+
+<script>
+  // Auto-apply filter bar: submit the form when simple inputs change, or when
+  // a multi-filter panel closes after checkbox selections were modified.
+  (function () {
+    const form = document.querySelector('form.filter-bar');
+    if (!form) return;
+
+    // Date, number, text inputs — 'change' fires on blur or Enter, not per keystroke.
+    form.querySelectorAll('input:not([type="checkbox"])').forEach(function (inp) {
+      inp.addEventListener('change', function () { form.submit(); });
+    });
+
+    // Multi-filter panels: track dirty on any checkbox change, then submit
+    // when the panel transitions to hidden.
+    form.querySelectorAll('.mf').forEach(function (mf) {
+      const panel = mf.querySelector('.mf-panel');
+      if (!panel) return;
+      let dirty = false;
+      mf.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        cb.addEventListener('change', function () { dirty = true; });
+      });
+      new MutationObserver(function () {
+        if (panel.hasAttribute('hidden') && dirty) {
+          dirty = false;
+          form.submit();
+        }
+      }).observe(panel, { attributes: true, attributeFilter: ['hidden'] });
+    });
+  })();
 </script>
 
 <hr class="my-4">

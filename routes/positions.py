@@ -213,7 +213,8 @@ def index():
     query = _build_positions_query(request.args)
     # Compute total PNL across all filtered rows (for display above table)
     all_filtered = query.all()
-    invalid_strategy_count = len(get_warning_groups())
+    warning_groups = get_warning_groups()
+    invalid_strategy_count = len(warning_groups)
     _all_pnl_map, _, _, _, _all_delta_map = compute_maps(all_filtered, price_source)
     total_pnl = 0
     total_net_pnl = 0
@@ -282,6 +283,7 @@ def index():
                            total_pnl=total_pnl, total_net_pnl=total_net_pnl,
                            total_position=total_position, total_spread_pos=total_spread_pos,
                            invalid_strategy_count=invalid_strategy_count,
+                           warning_groups=warning_groups,
                            neon_untagged=neon_untagged,
                            price_source=price_source)
 
