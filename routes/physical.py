@@ -13,7 +13,9 @@ def _mtm_sort_key(val):
         except ValueError:
             continue
     return datetime.max
-from models.db import db, PhysicalTrade
+from models.db import db, PhysicalTrade, TradePosition
+from services.contract_match import master_key
+from services.request_cache import get_all_positions
 from services.salesforce import get_sf_connection, fetch_report
 
 REPORT_ID = "00OQ800000Dog1NMAR"
@@ -52,9 +54,39 @@ def _first_nonblank(values):
     return ""
 
 
-def _build_groups(rows):
+def _build_hedge_index():
+    """Return {master_key: net_lots} summed across all AGP/AGS futures/options
+    positions. Net lots = sum(Long__c + Short__c); Short__c is stored negative,
+    so zero net means fully closed — treated as unhedged for display."""
+    hedge_lots = {}
+    for p in get_all_positions():
+        cx = p.contract_xl or ""
+        if not (cx.upper().startswith("AGP") or cx.upper().startswith("AGS")):
+            continue
+        k = master_key(cx)
+        if not k:
+            continue
+        d = p.data or {}
+        try:
+            net = float(d.get("Long__c") or 0) + float(d.get("Short__c") or 0)
+        except (TypeError, ValueError):
+            net = 0.0
+        hedge_lots[k] = hedge_lots.get(k, 0.0) + net
+    return hedge_lots
+
+
+def _build_groups(rows, hedge_lots=None):
     """Group rows by Venture, preserving first-seen order. Blank ventures go
     into a final 'Unassigned' group."""
+    hedge_lots = hedge_lots or {}
+
+    # Attach hedge_key / hedge_lots to every row up front, so downstream
+    # aggregation and the template can read straight off each row.
+    for r in rows:
+        k = master_key(r.data.get("Sub Contract Name"))
+        r.hedge_key = k
+        r.hedge_lots = hedge_lots.get(k) if k else None
+
     buckets = OrderedDict()
     for r in rows:
         key = (r.data.get("Venture") or "").strip()
@@ -65,6 +97,22 @@ def _build_groups(rows):
     for venture_id, bucket_rows in buckets.items():
         qtys = [_to_float(i.data.get("Quantity")) for i in bucket_rows]
         total_qty = sum(q for q in qtys if q is not None)
+
+        rows_with_key = [r for r in bucket_rows if r.hedge_key]
+        hedged_rows = [r for r in rows_with_key
+                       if r.hedge_lots is not None and abs(r.hedge_lots) > 1e-9]
+        agp_keys = sorted({r.hedge_key for r in rows_with_key if r.hedge_key.startswith("AGP/")})
+        ags_keys = sorted({r.hedge_key for r in rows_with_key if r.hedge_key.startswith("AGS/")})
+        # Coverage label drives the chip style in the template.
+        if not rows_with_key:
+            hedge_state = "none"
+        elif len(hedged_rows) == len(rows_with_key):
+            hedge_state = "full"
+        elif not hedged_rows:
+            hedge_state = "unhedged"
+        else:
+            hedge_state = "partial"
+
         summary = {
             "venture_id": venture_id or "Unassigned",
             "is_unassigned": venture_id == "",
@@ -98,6 +146,11 @@ def _build_groups(rows):
                 i.data.get("Origin: Country Name") for i in bucket_rows
             ),
             "rows": bucket_rows,
+            "hedge_state": hedge_state,
+            "hedged_row_count": len(hedged_rows),
+            "keyed_row_count": len(rows_with_key),
+            "agp_keys": agp_keys,
+            "ags_keys": ags_keys,
         }
         if summary["is_unassigned"]:
             unassigned = summary
@@ -113,7 +166,8 @@ def _build_groups(rows):
 @physical_bp.route("/physical")
 def index():
     rows = PhysicalTrade.query.order_by(PhysicalTrade.row_index).all()
-    groups = _build_groups(rows)
+    hedge_lots = _build_hedge_index()
+    groups = _build_groups(rows, hedge_lots=hedge_lots)
     last_synced = rows[0].synced_at if rows else None
     all_columns = list(rows[0].data.keys()) if rows else []
     all_mtm = sorted({

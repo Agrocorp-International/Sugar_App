@@ -44,6 +44,34 @@
   .v-status.s-closed   { background: #e5e7eb; color: #374151; }
   .v-status.s-blank    { background: #f3f4f6; color: #9ca3af; font-style: italic; }
 
+  .v-pill-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .v-hedge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+    white-space: nowrap;
+  }
+  .v-hedge.h-full     { background: #dcfce7; color: #166534; }
+  .v-hedge.h-partial  { background: #fef3c7; color: #92400e; }
+  .v-hedge.h-unhedged { background: #fee2e2; color: #991b1b; }
+
+  .hedge-cell { font-variant-numeric: tabular-nums; }
+  .hedge-cell a { text-decoration: none; color: inherit; }
+  .hedge-cell a:hover { text-decoration: underline; }
+  .hedge-badge {
+    display: inline-block;
+    padding: 0.08rem 0.45rem;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 600;
+  }
+  .hedge-badge.b-hedged   { background: #dcfce7; color: #166534; }
+  .hedge-badge.b-unhedged { background: #fee2e2; color: #991b1b; }
+  .hedge-badge.b-none     { background: #f3f4f6; color: #9ca3af; font-style: italic; }
+
   .v-body {
     border: 1px solid #c7d2fe;
     border-top: none;
@@ -332,8 +360,8 @@
           <div class="v-value">{{ g.main_commodity or '—' }}</div>
         </div>
         <div>
-          <div class="v-label">Status</div>
-          <div>
+          <div class="v-label">Status / Hedge</div>
+          <div class="v-pill-row">
             {% set s = (g.status or '')|lower %}
             <span class="v-status
               {% if s == 'open' %}s-open
@@ -343,6 +371,21 @@
               {% else %}s-blank{% endif %}">
               {{ g.status or '—' }}
             </span>
+            {% if g.keyed_row_count %}
+              {% if g.hedge_state == 'full' %}
+                <span class="v-hedge h-full" title="All sub-contracts with an AGP/AGS master have matching futures positions">
+                  {{ g.hedged_row_count }}/{{ g.keyed_row_count }} hedged
+                </span>
+              {% elif g.hedge_state == 'partial' %}
+                <span class="v-hedge h-partial" title="Only some sub-contracts are hedged">
+                  {{ g.hedged_row_count }}/{{ g.keyed_row_count }} hedged
+                </span>
+              {% else %}
+                <span class="v-hedge h-unhedged" title="No futures positions found for this venture's AGP/AGS masters">
+                  Unhedged
+                </span>
+              {% endif %}
+            {% endif %}
           </div>
         </div>
         <div>
@@ -369,6 +412,7 @@
                 {% for col in row_columns %}
                   <th>{{ col }}</th>
                 {% endfor %}
+                <th>Hedge</th>
               </tr>
             </thead>
             <tbody>
@@ -377,6 +421,23 @@
                   {% for col in row_columns %}
                     <td>{{ row.data.get(col, '') }}</td>
                   {% endfor %}
+                  <td class="hedge-cell">
+                    {% if not row.hedge_key %}
+                      <span class="hedge-badge b-none" title="Sub Contract Name is not an AGP/AGS reference">n/a</span>
+                    {% elif row.hedge_lots is none or row.hedge_lots|abs < 0.0001 %}
+                      <a href="{{ url_for('positions.index') }}?contract_xl_filter={{ row.hedge_key }}"
+                         title="No net position on {{ row.hedge_key }} — click to check on Positions page">
+                        <span class="hedge-badge b-unhedged">Unhedged</span>
+                      </a>
+                    {% else %}
+                      <a href="{{ url_for('positions.index') }}?contract_xl_filter={{ row.hedge_key }}"
+                         title="Net {{ '{:,.0f}'.format(row.hedge_lots) }} lots on {{ row.hedge_key }}">
+                        <span class="hedge-badge b-hedged">
+                          Hedged {{ '{:,.0f}'.format(row.hedge_lots) }}
+                        </span>
+                      </a>
+                    {% endif %}
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>
