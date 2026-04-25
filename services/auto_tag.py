@@ -62,9 +62,10 @@ class MatchResult:
 
 @dataclass
 class UpdateBatches:
-    sf_update_1: pd.DataFrame   # Path 1: Long-or-Short single-side rows
-    sf_update_2: pd.DataFrame   # Path 2: rows that have BOTH Long and Short
-    final_df: pd.DataFrame      # Path 3: manual / split with broker commission
+    sf_update_1: pd.DataFrame          # Path 1: Long-or-Short single-side rows
+    sf_update_2: pd.DataFrame          # Path 2: rows that have BOTH Long and Short
+    final_df: pd.DataFrame             # Path 3: manual / split with broker commission
+    missing_option_creates: pd.DataFrame  # Path 3b: option close/expiry entries (price=0, no SF Id)
 
 
 @dataclass
@@ -132,10 +133,14 @@ def read_trades_xlsx(file_storage, start_date, end_date) -> pd.DataFrame:
         sugarxl["Contract Ref"].str.split("_").str[0].str.replace(" ", "", regex=False)
     )
 
+    if "Brokerage Fees" not in sugarxl.columns:
+        sugarxl["Brokerage Fees"] = 0.0
+
     sugarxl = sugarxl[[
         "Trade Date", "Account", "Book", "Long", "Short", "Trade Price",
         "Contract", "Contract Ref", "Contract Ref SF", "Instrument",
         "Status", "Trader", "Trade Code", "Trade ID", "Group", "Spread Contract",
+        "Brokerage Fees",
     ]]
 
     grouped = sugarxl.groupby(
@@ -144,10 +149,13 @@ def read_trades_xlsx(file_storage, start_date, end_date) -> pd.DataFrame:
             "Contract Ref SF", "Account", "Instrument", "Status", "Trader",
             "Trade Code", "Trade ID", "Group", "Spread Contract",
         ],
-    ).agg({"Long": "sum", "Short": "sum"}).reset_index()
+    ).agg({"Long": "sum", "Short": "sum", "Brokerage Fees": "sum"}).reset_index()
 
     grouped["quantity"] = grouped["Long"] + grouped["Short"]
     grouped = grouped[grouped["quantity"] != 0]
+    grouped["Brokerage Fees Strategy"] = (
+        grouped["Brokerage Fees"].round(2).map(lambda x: f"BF={x:.2f}")
+    )
     return grouped
 
 
@@ -206,18 +214,25 @@ def fetch_internals(sf, start_date, end_date) -> pd.DataFrame:
     fill_cols = ["Realised__c", "Trader__c", "Trade_Code__c", "Trade_Key__c", "Trade_Group__c", "Strategy__c"]
     internals[fill_cols] = internals[fill_cols].fillna("")
 
-    # Cell 9 — split Strategy__c into 4 columns
+    # Cell 9 — split Strategy__c into 5 columns (Instrument, Spread, ContractRef, Book, BF=fee)
     split_cols = (
         internals["Strategy__c"]
         .fillna("")
-        .str.split("-", n=3, expand=True)
+        .str.split("-", n=4, expand=True)
         .apply(lambda col: col.str.strip())
     )
-    split_cols = split_cols.reindex(columns=[0, 1, 2, 3])
-    internals[["Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl"]] = split_cols
-    internals[["Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl"]] = (
-        internals[["Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl"]]
+    split_cols = split_cols.reindex(columns=[0, 1, 2, 3, 4])
+    internals[["Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl", "Brokerage_Fees_xl"]] = split_cols
+    internals[["Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl", "Brokerage_Fees_xl"]] = (
+        internals[["Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl", "Brokerage_Fees_xl"]]
         .fillna("").astype(str)
+    )
+    internals["Brokerage_Fees_num"] = (
+        internals["Brokerage_Fees_xl"]
+        .str.replace("BF=", "", regex=False)
+        .replace("", "0")
+        .pipe(pd.to_numeric, errors="coerce")
+        .fillna(0)
     )
 
     # Cell 15 — compound contract code for options
@@ -252,14 +267,14 @@ def aggregate_internals(internals: pd.DataFrame) -> pd.DataFrame:
         "Realised__c", "Trader__c", "Trade_Code__c", "Trade_Key__c",
         "Trade_Group__c", "Strategy__c", "Instrument_xl", "Spread_xl",
         "Contract_Ref_xl", "Book_xl",
-    ]).agg({"Long__c": "sum", "Short__c": "sum"}).reset_index()
+    ]).agg({"Long__c": "sum", "Short__c": "sum", "Brokerage_Fees_num": "sum"}).reset_index()
 
     nan_grp = nan_rows.groupby([
         "Trade_Date__c", "Book__c", "Contract__c", "Price__c",
         "AGP/AGS", "Broker_Name__c", "Realised__c", "Trader__c",
         "Trade_Code__c", "Trade_Key__c", "Trade_Group__c", "Strategy__c",
         "Instrument_xl", "Spread_xl", "Contract_Ref_xl", "Book_xl",
-    ]).agg({"Long__c": "sum", "Short__c": "sum"}).reset_index()
+    ]).agg({"Long__c": "sum", "Short__c": "sum", "Brokerage_Fees_num": "sum"}).reset_index()
 
     nan_grp["Strike__c"] = float("nan")
     nan_grp["Put_Call_2__c"] = float("nan")
@@ -267,6 +282,9 @@ def aggregate_internals(internals: pd.DataFrame) -> pd.DataFrame:
     grp = pd.concat([non_nan_grp, nan_grp], ignore_index=True)
     grp["quantity"] = grp["Long__c"] + grp["Short__c"]
     grp = grp[grp["quantity"] != 0]
+    grp["Brokerage_Fees_xl"] = (
+        grp["Brokerage_Fees_num"].round(2).map(lambda x: f"BF={x:.2f}")
+    )
     return grp
 
 
@@ -278,11 +296,13 @@ LEFT_KEYS = [
     "Trade Price", "quantity", "Contract", "Trade Date", "Contract Ref",
     "Contract Ref SF", "Account", "Status", "Trader", "Trade Code",
     "Trade ID", "Group", "Spread Contract", "Instrument", "Book",
+    "Brokerage Fees Strategy",
 ]
 RIGHT_KEYS = [
     "Price__c", "quantity", "Contract__c", "Trade_Date__c", "Contract_Ref_xl",
     "AGP/AGS", "Broker_Name__c", "Realised__c", "Trader__c", "Trade_Code__c",
     "Trade_Key__c", "Trade_Group__c", "Spread_xl", "Instrument_xl", "Book_xl",
+    "Brokerage_Fees_xl",
 ]
 
 
@@ -325,7 +345,7 @@ PROJECT_COLS = [
     "New_AGS__c", "Contract Ref", "Realised__c", "Status", "Status__c",
     "Trader", "Trader__c", "Trade Code", "Trade_Code__c", "Trade ID",
     "Trade_Key__c", "Group", "Trade_Group__c", "Spread Contract",
-    "Strategy__c", "Contract Ref SF",
+    "Strategy__c", "Contract Ref SF", "Brokerage Fees Strategy",
 ]
 
 PROJECT_COLS_3 = PROJECT_COLS + ["Broker_Commission__c"]
@@ -381,6 +401,7 @@ def build_update_batches(
         "Instrument", "Trade Price", "Contract", "Trade Date", "Account",
         "Long", "Short", "Book", "Contract Ref", "Status", "Trader",
         "Trade Code", "Trade ID", "Group", "Spread Contract", "Contract Ref SF",
+        "Brokerage Fees Strategy",
     ]]
     rt2_a = rt2_src.copy()
     rt2_b = rt2_src.copy()
@@ -407,7 +428,7 @@ def build_update_batches(
         ~((rt2_final["Id"].isna()) & (rt2_final["Account"] != "Internal transfer"))
     ]
     manual_update_2 = rt2_final[
-        (rt2_final["Id"].isna()) & (rt2_final["Id"] != "Internal transfer")
+        (rt2_final["Id"].isna()) & (rt2_final["Account"] != "Internal transfer")
     ]
 
     # ---------- Path 3 (Cells 26-28) ----------
@@ -427,7 +448,7 @@ def build_update_batches(
         "Instrument", "Trade Price", "Contract", "Trade Date", "Account",
         "Long", "Short", "Total Long", "Total Short", "Book", "Contract Ref",
         "Status", "Trader", "Trade Code", "Trade ID", "Group",
-        "Spread Contract", "Contract Ref SF",
+        "Spread Contract", "Contract Ref SF", "Brokerage Fees Strategy",
     ]]
 
     rt3 = pd.merge(
@@ -477,10 +498,17 @@ def build_update_batches(
 
     final_df = pd.DataFrame(final_records) if final_records else pd.DataFrame(columns=PROJECT_COLS_3)
 
+    missing_option_creates = rt3[
+        rt3["Id"].isna()
+        & (rt3["Instrument"] == "Options")
+        & (pd.to_numeric(rt3["Trade Price"], errors="coerce") == 0)
+    ].copy() if not rt3.empty else pd.DataFrame(columns=PROJECT_COLS_3)
+
     return UpdateBatches(
         sf_update_1=sf_update_1.reset_index(drop=True),
         sf_update_2=sf_update_2.reset_index(drop=True),
         final_df=final_df.reset_index(drop=True),
+        missing_option_creates=missing_option_creates.reset_index(drop=True),
     )
 
 
@@ -534,7 +562,7 @@ def _row_to_sf_fields(sf, row, *, include_broker_commission, is_create, push_rep
             "Trade_Code__c": row["Trade Code"],
             "Trade_Key__c": row["Trade ID"],
             "Trade_Group__c": row["Group"],
-            "Strategy__c": f'{row["Instrument"]}-{row["Spread Contract"]}-{row["Contract Ref"]}-{row["Book"]}',
+            "Strategy__c": f'{row["Instrument"]}-{row["Spread Contract"]}-{row["Contract Ref"]}-{row["Book"]}-{row.get("Brokerage Fees Strategy", "BF=0.00")}',
         }
     except KeyError as e:
         push_report.errors.append((str(row.get("Trade ID", "?")), f"Lookup miss: {e}"))
@@ -633,6 +661,14 @@ def push_batch(
 
         try:
             if create_record:
+                instr = row.get("Instrument", "")
+                price = pd.to_numeric(row.get("Trade Price"), errors="coerce")
+                if instr == "Options" and pd.notna(price) and price != 0:
+                    report.skipped.append((str(row.get("Trade ID", "?")), "Option create skipped — non-zero price"))
+                    continue
+                if instr == "Options" and (pd.isna(price) or price == 0):
+                    cleaned["Status__c"] = "CLOSE"
+                    cleaned["Closed_Date__c"] = datetime.today().strftime("%Y-%m-%d")
                 result = sf.Futur__c.create(cleaned)
                 report.created.append(result.get("id"))
             else:
@@ -659,6 +695,12 @@ def execute_full_push(sf, batches: UpdateBatches) -> dict:
             batch_name="sf_update_2",
             include_broker_commission=False,
             create_internal_transfer_only=True,
+        ),
+        "missing_option_creates": push_batch(
+            sf, batches.missing_option_creates,
+            batch_name="missing_option_creates",
+            include_broker_commission=False,
+            create_internal_transfer_only=False,
         ),
         "final_df": push_batch(
             sf, batches.final_df,
@@ -790,6 +832,7 @@ def build_preview(sf, file_storage, start_date, end_date) -> dict:
             "path2_rows": int(len(batches.sf_update_2)),
             "path3_rows": int(len(batches.final_df)),
             "path3_creates": int(batches.final_df["Id"].isna().sum()) if not batches.final_df.empty else 0,
+            "missing_option_creates": int(len(batches.missing_option_creates)),
         },
     }
 
