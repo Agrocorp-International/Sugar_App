@@ -284,8 +284,22 @@
   </div>
 </div>
 
+{% if commodities %}
+<div class="tab-switcher" id="commodityTabs">
+  <button class="tab-sw-btn active" data-commodity="" type="button">
+    <i class="bi bi-grid me-1"></i>All
+    <span class="tab-badge">{{ groups|length }}</span>
+  </button>
+  {% for c in commodities %}
+  <button class="tab-sw-btn" data-commodity="{{ c }}" type="button">
+    {{ c }}<span class="tab-badge">0</span>
+  </button>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="ventures-layout" id="venturesLayout">
-{% if mtm_months or commodities %}
+{% if mtm_months %}
 <aside class="ventures-slicer">
   <div class="ventures-slicer-head">
     <button type="button" class="xl-slicer-toggle" id="slicerToggle"
@@ -297,7 +311,6 @@
   </div>
 
   <div class="ventures-slicer-body">
-    {% if mtm_months %}
     <div class="xl-slicer" data-field="mtm">
       <div class="xl-slicer-header">
         <span class="xl-slicer-title">MTM Shipment Month</span>
@@ -314,26 +327,6 @@
         {% endfor %}
       </div>
     </div>
-    {% endif %}
-
-    {% if commodities %}
-    <div class="xl-slicer" data-field="commodity">
-      <div class="xl-slicer-header">
-        <span class="xl-slicer-title">Commodity</span>
-        <div class="xl-slicer-header-right">
-          <span class="xl-slicer-count"></span>
-          <button class="xl-slicer-clear disabled" title="Clear filter">
-            <i class="bi bi-funnel"></i>
-          </button>
-        </div>
-      </div>
-      <div class="xl-slicer-list">
-        {% for c in commodities %}
-          <button class="xl-slicer-item" data-val="{{ c }}">{{ c }}</button>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
   </div>
 </aside>
 {% endif %}
@@ -457,25 +450,102 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    // Excel-style slicers (MTM Shipment Month + Commodity) — AND across slicers, OR within each
-    const slicers = [...document.querySelectorAll('.xl-slicer[data-field]')];
-    const cards = document.querySelectorAll('.v-card');
-    const totalCount = document.getElementById('slicerTotalCount');
-    const FILTERS_STORAGE_KEY = 'physicalVenturesSlicerFilters';
+    // ── Shared refs ───────────────────────────────────────────────────────
+    const tabSwitcher   = document.getElementById('commodityTabs');
+    const layoutEl      = document.getElementById('venturesLayout');
+    const slicerToggle  = document.getElementById('slicerToggle');
+    const slicers       = [...document.querySelectorAll('.xl-slicer[data-field]')];
+    const cards         = document.querySelectorAll('.v-card');
+    const totalCount    = document.getElementById('slicerTotalCount');
+    let selectedCommodity = '';
 
+    const TAB_KEY     = 'physicalVenturesActiveTab';
+    const FILTER_KEY  = 'physicalVenturesSlicerFilters';
+    const SLICER_KEY  = 'physicalVenturesSlicerCollapsed';
+
+    // ── Combined filter ───────────────────────────────────────────────────
     function slicerActive(slicer) {
       return [...slicer.querySelectorAll('.xl-slicer-item.active')].map(i => i.dataset.val);
     }
+
+    function applyFilter() {
+      const mtmSlicer = slicers.find(s => s.dataset.field === 'mtm');
+      const activeMtm = mtmSlicer ? slicerActive(mtmSlicer) : [];
+
+      // Update MTM slicer UI badges/clear button
+      if (mtmSlicer) {
+        const count = mtmSlicer.querySelector('.xl-slicer-count');
+        const clear = mtmSlicer.querySelector('.xl-slicer-clear');
+        if (count) { count.textContent = activeMtm.length; count.style.display = activeMtm.length > 0 ? '' : 'none'; }
+        if (clear) clear.classList.toggle('disabled', activeMtm.length === 0);
+      }
+
+      cards.forEach(card => {
+        let visible = true;
+        if (selectedCommodity) {
+          const cardComs = (card.dataset.commodity || '').split(',').map(s => s.trim()).filter(Boolean);
+          if (!cardComs.includes(selectedCommodity)) visible = false;
+        }
+        if (visible && activeMtm.length > 0) {
+          const cardMtm = (card.dataset.mtm || '').split(',').filter(Boolean);
+          if (!activeMtm.some(v => cardMtm.includes(v))) visible = false;
+        }
+        card.style.display = visible ? '' : 'none';
+      });
+
+      // Update tab badges (each badge = groups matching that commodity + current MTM filter)
+      if (tabSwitcher) {
+        tabSwitcher.querySelectorAll('.tab-sw-btn').forEach(btn => {
+          const badge = btn.querySelector('.tab-badge');
+          if (!badge) return;
+          const commodity = btn.dataset.commodity || '';
+          let count = 0;
+          cards.forEach(card => {
+            if (commodity) {
+              const cardComs = (card.dataset.commodity || '').split(',').map(s => s.trim()).filter(Boolean);
+              if (!cardComs.includes(commodity)) return;
+            }
+            if (activeMtm.length > 0) {
+              const cardMtm = (card.dataset.mtm || '').split(',').filter(Boolean);
+              if (!activeMtm.some(v => cardMtm.includes(v))) return;
+            }
+            count++;
+          });
+          badge.textContent = count;
+        });
+      }
+
+      const visibleCount = [...cards].filter(c => c.style.display !== 'none').length;
+      if (totalCount) { totalCount.textContent = visibleCount; totalCount.style.display = visibleCount > 0 ? '' : 'none'; }
+    }
+
+    // ── Commodity tab switcher ────────────────────────────────────────────
+    function setActiveTab(commodity) {
+      selectedCommodity = commodity;
+      if (tabSwitcher) {
+        tabSwitcher.querySelectorAll('.tab-sw-btn').forEach(btn => {
+          btn.classList.toggle('active', (btn.dataset.commodity || '') === commodity);
+        });
+      }
+      localStorage.setItem(TAB_KEY, commodity);
+      applyFilter();
+    }
+
+    if (tabSwitcher) {
+      tabSwitcher.querySelectorAll('.tab-sw-btn').forEach(btn => {
+        btn.addEventListener('click', () => setActiveTab(btn.dataset.commodity || ''));
+      });
+    }
+
+    // ── MTM slicer ────────────────────────────────────────────────────────
     function saveFilters() {
       const state = {};
       slicers.forEach(s => { state[s.dataset.field] = slicerActive(s); });
-      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(FILTER_KEY, JSON.stringify(state));
     }
     function loadFilters() {
       let saved = {};
-      try {
-        saved = JSON.parse(localStorage.getItem(FILTERS_STORAGE_KEY) || '{}') || {};
-      } catch (_) { saved = {}; }
+      try { saved = JSON.parse(localStorage.getItem(FILTER_KEY) || '{}') || {}; } catch (_) {}
       slicers.forEach(s => {
         const want = new Set(saved[s.dataset.field] || []);
         s.querySelectorAll('.xl-slicer-item').forEach(item => {
@@ -483,77 +553,45 @@
         });
       });
     }
-    function applySlicerFilter() {
-      let totalActive = 0;
-      const filters = slicers.map(s => {
-        const active = slicerActive(s);
-        totalActive += active.length;
-        const count = s.querySelector('.xl-slicer-count');
-        const clear = s.querySelector('.xl-slicer-clear');
-        if (count) {
-          count.textContent = active.length;
-          count.style.display = active.length > 0 ? '' : 'none';
-        }
-        if (clear) clear.classList.toggle('disabled', active.length === 0);
-        return { field: s.dataset.field, active };
-      });
-      if (totalCount) {
-        totalCount.textContent = totalActive;
-        totalCount.style.display = totalActive > 0 ? '' : 'none';
-      }
-      cards.forEach(card => {
-        const visible = filters.every(({ field, active }) => {
-          if (!active.length) return true;
-          const raw = card.dataset[field] || '';
-          const values = raw ? raw.split(',') : [];
-          return active.some(v => values.includes(v));
-        });
-        card.style.display = visible ? '' : 'none';
-      });
-    }
     slicers.forEach(s => {
       s.querySelectorAll('.xl-slicer-item').forEach(item => {
-        item.addEventListener('click', () => {
-          item.classList.toggle('active');
-          saveFilters();
-          applySlicerFilter();
-        });
+        item.addEventListener('click', () => { item.classList.toggle('active'); saveFilters(); applyFilter(); });
       });
       const clear = s.querySelector('.xl-slicer-clear');
       if (clear) {
         clear.addEventListener('click', () => {
           s.querySelectorAll('.xl-slicer-item').forEach(i => i.classList.remove('active'));
-          saveFilters();
-          applySlicerFilter();
+          saveFilters(); applyFilter();
         });
       }
     });
+
+    // Load MTM state first, then restore tab (setActiveTab calls applyFilter with MTM already set)
     loadFilters();
-    applySlicerFilter();
+    setActiveTab(localStorage.getItem(TAB_KEY) || '');
 
-    // Collapsible slicer sidebar
-    const layoutEl = document.getElementById('venturesLayout');
-    const slicerToggle = document.getElementById('slicerToggle');
-    const SLICER_STORAGE_KEY = 'physicalVenturesSlicerCollapsed';
-
+    // ── Collapsible slicer sidebar ────────────────────────────────────────
     function setSlicerCollapsed(collapsed) {
+      if (!layoutEl) return;
       layoutEl.classList.toggle('slicer-collapsed', collapsed);
-      slicerToggle.setAttribute('aria-expanded', String(!collapsed));
-      slicerToggle.setAttribute('aria-label', collapsed ? 'Expand filter' : 'Collapse filter');
-      const icon = slicerToggle.querySelector('i');
-      if (icon) icon.className = collapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+      if (slicerToggle) {
+        slicerToggle.setAttribute('aria-expanded', String(!collapsed));
+        slicerToggle.setAttribute('aria-label', collapsed ? 'Expand filter' : 'Collapse filter');
+        const icon = slicerToggle.querySelector('i');
+        if (icon) icon.className = collapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+      }
     }
-
     if (layoutEl && slicerToggle) {
-      setSlicerCollapsed(localStorage.getItem(SLICER_STORAGE_KEY) === 'true');
+      setSlicerCollapsed(localStorage.getItem(SLICER_KEY) === 'true');
       slicerToggle.addEventListener('click', () => {
         const nowCollapsed = !layoutEl.classList.contains('slicer-collapsed');
         setSlicerCollapsed(nowCollapsed);
-        localStorage.setItem(SLICER_STORAGE_KEY, String(nowCollapsed));
+        localStorage.setItem(SLICER_KEY, String(nowCollapsed));
       });
     }
 
-    const expandBtn = document.getElementById('expandAllBtn');
+    // ── Expand / Collapse all ─────────────────────────────────────────────
+    const expandBtn  = document.getElementById('expandAllBtn');
     const collapseBtn = document.getElementById('collapseAllBtn');
     if (expandBtn) {
       expandBtn.addEventListener('click', () => {
