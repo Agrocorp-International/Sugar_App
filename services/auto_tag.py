@@ -154,6 +154,9 @@ def read_trades_xlsx(file_storage, start_date, end_date) -> pd.DataFrame:
     ).agg({"Long": "sum", "Short": "sum", "Brokerage Fees": "sum"}).reset_index()
 
     grouped["quantity"] = grouped["Long"] + grouped["Short"]
+    grouped = grouped[
+        (grouped["quantity"] != 0) | (grouped["Brokerage Fees"] != 0)
+    ]
     grouped["Brokerage Fees Strategy"] = (
         grouped["Brokerage Fees"].round(2).map(lambda x: f"BF={x:.2f}")
     )
@@ -282,7 +285,7 @@ def aggregate_internals(internals: pd.DataFrame) -> pd.DataFrame:
 
     grp = pd.concat([non_nan_grp, nan_grp], ignore_index=True)
     grp["quantity"] = grp["Long__c"] + grp["Short__c"]
-    grp = grp[grp["quantity"] != 0]
+    grp = grp[(grp["quantity"] != 0) | (grp["Brokerage_Fees_num"] != 0)]
     grp["Brokerage_Fees_xl"] = (
         grp["Brokerage_Fees_num"].round(2).map(lambda x: f"BF={x:.2f}")
     )
