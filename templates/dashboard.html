@@ -749,9 +749,9 @@
 </div>
 
 <script>
-// ---- Hide / show PNL values (client-side, persisted in localStorage) ----
+// ---- Hide / show PNL values (password-gated reveal, always starts hidden) ----
 (function() {
-  const KEY = "dash_hide_pnl";
+  const PASSWORD = "duckbucket";
   const SELECTOR = ".dash-hero .dash-hero-value, .dash-hero .dash-delta-value";
   const btn  = document.getElementById("hidePnlBtn");
   const icon = document.getElementById("hidePnlIcon");
@@ -771,12 +771,19 @@
     btn.title = hide ? "Show PNL" : "Hide PNL";
   }
 
-  let hidden = localStorage.getItem(KEY) === "1";
+  let hidden = true;
   apply(hidden);
 
   btn.addEventListener("click", () => {
+    if (hidden) {
+      const entered = prompt("Enter password to reveal PNL:");
+      if (entered === null) return;
+      if (entered !== PASSWORD) {
+        alert("Incorrect password.\n\nHint: What will a handsome korean man pick for his valorant name?");
+        return;
+      }
+    }
     hidden = !hidden;
-    localStorage.setItem(KEY, hidden ? "1" : "0");
     apply(hidden);
   });
 })();
