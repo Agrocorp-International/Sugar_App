@@ -6,7 +6,7 @@
   .v-card { margin-bottom: 0.75rem; }
   .v-header {
     display: grid;
-    grid-template-columns: 140px minmax(160px,1fr) minmax(120px,1fr) 110px minmax(160px,1.2fr) 120px 90px;
+    grid-template-columns: 140px minmax(160px,1fr) minmax(120px,1fr) 100px 130px minmax(160px,1.2fr) 120px 140px 90px;
     gap: 1rem;
     align-items: center;
     padding: 0.7rem 1rem;
@@ -27,6 +27,29 @@
   .v-value { font-size: .92rem; color: #111827; font-weight: 500; line-height: 1.2; }
   .v-id { font-weight: 700; font-size: .95rem; color: #1e3a8a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .v-qty { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .v-cost { font-variant-numeric: tabular-nums; font-weight: 600; color: #b91c1c; }
+  .v-cost-sub { font-size: .7rem; color: #6b7280; font-weight: 500; line-height: 1.1; margin-top: 1px; }
+
+  /* Cost column group: tinted background to set apart from contract columns */
+  .v-body th.cost-col, .v-body td.cost-col { background: #fef9f5; }
+  .v-body th.cost-col { color: #92400e; }
+  .v-body td.cost-col { color: #7c2d12; }
+  .v-body th.cost-first, .v-body td.cost-first { border-left: 2px solid #f59e0b; }
+  .v-body td.cost-total { font-weight: 700; }
+  .freight-src {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 5px;
+    font-size: .65rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    border-radius: 3px;
+    vertical-align: 1px;
+    text-transform: uppercase;
+  }
+  .freight-src-fix { background: #dcfce7; color: #166534; }
+  .freight-src-mtm { background: #dbeafe; color: #1e40af; }
+  .freight-src-org { background: #fef3c7; color: #92400e; }
   .v-chevron { color: #6b7280; transition: transform .2s ease; justify-self: end; }
   .v-header[aria-expanded="true"] .v-chevron { transform: rotate(90deg); }
 
@@ -56,6 +79,7 @@
   }
   .v-hedge.h-full     { background: #dcfce7; color: #166534; }
   .v-hedge.h-partial  { background: #fef3c7; color: #92400e; }
+  .v-hedge.h-over     { background: #ede9fe; color: #5b21b6; }
   .v-hedge.h-unhedged { background: #fee2e2; color: #991b1b; }
 
   .hedge-cell { font-variant-numeric: tabular-nums; }
@@ -68,9 +92,17 @@
     font-size: .72rem;
     font-weight: 600;
   }
-  .hedge-badge.b-hedged   { background: #dcfce7; color: #166534; }
+  .hedge-badge.b-full     { background: #dcfce7; color: #166534; }
+  .hedge-badge.b-partial  { background: #fef3c7; color: #92400e; }
+  .hedge-badge.b-over     { background: #ede9fe; color: #5b21b6; }
   .hedge-badge.b-unhedged { background: #fee2e2; color: #991b1b; }
   .hedge-badge.b-none     { background: #f3f4f6; color: #9ca3af; font-style: italic; }
+  .hedge-detail {
+    color: #6b7280;
+    font-size: .7rem;
+    font-variant-numeric: tabular-nums;
+    margin-left: 4px;
+  }
 
   .v-body {
     border: 1px solid #c7d2fe;
@@ -353,7 +385,7 @@
           <div class="v-value">{{ g.main_commodity or '—' }}</div>
         </div>
         <div>
-          <div class="v-label">Status / Hedge</div>
+          <div class="v-label">Venture Status</div>
           <div class="v-pill-row">
             {% set s = (g.status or '')|lower %}
             <span class="v-status
@@ -364,20 +396,24 @@
               {% else %}s-blank{% endif %}">
               {{ g.status or '—' }}
             </span>
+          </div>
+        </div>
+        <div>
+          <div class="v-label">Hedge</div>
+          <div class="v-pill-row">
             {% if g.keyed_row_count %}
+              {% set tip %}{{ g.full_count }} fully · {{ g.partial_count }} partial · {{ g.over_count }} over · {{ g.unhedged_count }} unhedged ({{ g.keyed_row_count }} hedge-tracked rows){% endset %}
               {% if g.hedge_state == 'full' %}
-                <span class="v-hedge h-full" title="All sub-contracts with an AGP/AGS master have matching futures positions">
-                  {{ g.hedged_row_count }}/{{ g.keyed_row_count }} hedged
-                </span>
+                <span class="v-hedge h-full" title="{{ tip }}">Fully Hedged</span>
               {% elif g.hedge_state == 'partial' %}
-                <span class="v-hedge h-partial" title="Only some sub-contracts are hedged">
-                  {{ g.hedged_row_count }}/{{ g.keyed_row_count }} hedged
-                </span>
-              {% else %}
-                <span class="v-hedge h-unhedged" title="No futures positions found for this venture's AGP/AGS masters">
-                  Unhedged
-                </span>
+                <span class="v-hedge h-partial" title="{{ tip }}">Partially Hedged</span>
+              {% elif g.hedge_state == 'over' %}
+                <span class="v-hedge h-over" title="{{ tip }}">Over Hedged</span>
+              {% elif g.hedge_state == 'unhedged' %}
+                <span class="v-hedge h-unhedged" title="{{ tip }}">Unhedged</span>
               {% endif %}
+            {% else %}
+              <span class="v-status s-blank">—</span>
             {% endif %}
           </div>
         </div>
@@ -390,6 +426,15 @@
           <div class="v-value v-qty">
             {% if g.total_qty %}{{ '{:,.0f}'.format(g.total_qty) }}{% else %}—{% endif %}
           </div>
+        </div>
+        <div>
+          <div class="v-label">Total Cost</div>
+          <div class="v-value v-cost">
+            {% if g.total_cost %}${{ '{:,.0f}'.format(g.total_cost) }}{% else %}—{% endif %}
+          </div>
+          {% if g.avg_cost_per_mt %}
+            <div class="v-cost-sub">${{ '{:,.2f}'.format(g.avg_cost_per_mt) }} /MT avg</div>
+          {% endif %}
         </div>
         <div>
           <div class="v-label">{{ g.row_count }} row{{ 's' if g.row_count != 1 else '' }}</div>
@@ -405,6 +450,9 @@
                 {% for col in row_columns %}
                   <th>{{ col }}</th>
                 {% endfor %}
+                {% for col in cost_columns %}
+                  <th class="cost-col {% if loop.first %}cost-first{% endif %}">{{ col }}</th>
+                {% endfor %}
                 <th>Hedge</th>
               </tr>
             </thead>
@@ -414,20 +462,44 @@
                   {% for col in row_columns %}
                     <td>{{ row.data.get(col, '') }}</td>
                   {% endfor %}
+                  {% for col in cost_columns %}
+                    {% if col == 'Total Cost / MT' %}
+                      <td class="cost-col cost-first cost-total"
+                          title="Computed: picked freight + finance + insurance + fumigation + weight loss + est. demurrage − demurrage recovery + other">
+                        {% if row.total_cost_per_mt is not none %}{{ '{:,.2f}'.format(row.total_cost_per_mt) }}{% endif %}
+                      </td>
+                    {% elif col == 'Freight /MT' %}
+                      <td class="cost-col"
+                          title="{% if row.freight_source %}Source: {{ freight_source_labels[row.freight_source] }}{% else %}No freight value on this row{% endif %}">
+                        {% if row.freight_per_mt is not none %}
+                          {{ '{:,.2f}'.format(row.freight_per_mt) }}
+                          <span class="freight-src freight-src-{{ row.freight_source|lower }}">{{ row.freight_source }}</span>
+                        {% endif %}
+                      </td>
+                    {% else %}
+                      <td class="cost-col">{{ row.data.get(col, '') }}</td>
+                    {% endif %}
+                  {% endfor %}
                   <td class="hedge-cell">
                     {% if not row.hedge_key %}
                       <span class="hedge-badge b-none" title="Sub Contract Name is not an AGP/AGS reference">n/a</span>
-                    {% elif row.hedge_lots is none or row.hedge_lots|abs < 0.0001 %}
-                      <a href="{{ url_for('positions.index') }}?contract_xl_filter={{ row.hedge_key }}"
-                         title="No net position on {{ row.hedge_key }} — click to check on Positions page">
-                        <span class="hedge-badge b-unhedged">Unhedged</span>
-                      </a>
                     {% else %}
-                      <a href="{{ url_for('positions.index') }}?contract_xl_filter={{ row.hedge_key }}"
-                         title="Net {{ '{:,.0f}'.format(row.hedge_lots) }} lots on {{ row.hedge_key }}">
-                        <span class="hedge-badge b-hedged">
-                          Hedged {{ '{:,.0f}'.format(row.hedge_lots) }}
-                        </span>
+                      {% set h = row.hedge_lots or 0 %}
+                      {% set q = row.physical_lots_master or 0 %}
+                      {% set tip %}{{ '{:,.0f}'.format(h|abs) }} lots hedge / {{ '{:,.0f}'.format(q|abs) }} lots physical on {{ row.hedge_key }} (master rolls up all sub-contracts on that contract){% endset %}
+                      <a href="{{ url_for('positions.index') }}?contract_xl_filter={{ row.hedge_key }}" title="{{ tip }}">
+                        {% if row.hedge_status == 'full' %}
+                          <span class="hedge-badge b-full">Fully Hedged</span>
+                        {% elif row.hedge_status == 'partial' %}
+                          <span class="hedge-badge b-partial">Partially Hedged</span>
+                        {% elif row.hedge_status == 'over' %}
+                          <span class="hedge-badge b-over">Over Hedged</span>
+                        {% elif row.hedge_status == 'unhedged' %}
+                          <span class="hedge-badge b-unhedged">Unhedged</span>
+                        {% else %}
+                          <span class="hedge-badge b-none">—</span>
+                        {% endif %}
+                        <span class="hedge-detail">{{ '{:,.0f}'.format(h|abs) }}/{{ '{:,.0f}'.format(q|abs) }}</span>
                       </a>
                     {% endif %}
                   </td>
