@@ -105,7 +105,9 @@ def read_trades_xlsx(file_storage, start_date, end_date) -> pd.DataFrame:
     sugarxl = sugarxl[
         (sugarxl["Account"] != "Dummy") & (sugarxl["Book"] != "Dummy")
     ]
-    sugarxl = sugarxl[~(sugarxl["Trade Price"] == 0)]
+    sugarxl = sugarxl[
+        ~((sugarxl["Trade Price"] == 0) & (sugarxl["Instrument"] != "Options"))
+    ]
     sugarxl = sugarxl.sort_values(by="Trade Date")
 
     sugarxl.loc[sugarxl["Book"] == "Alpha", "Contract Ref"] = ""
@@ -152,7 +154,6 @@ def read_trades_xlsx(file_storage, start_date, end_date) -> pd.DataFrame:
     ).agg({"Long": "sum", "Short": "sum", "Brokerage Fees": "sum"}).reset_index()
 
     grouped["quantity"] = grouped["Long"] + grouped["Short"]
-    grouped = grouped[grouped["quantity"] != 0]
     grouped["Brokerage Fees Strategy"] = (
         grouped["Brokerage Fees"].round(2).map(lambda x: f"BF={x:.2f}")
     )
@@ -407,6 +408,26 @@ def build_update_batches(
     rt2_b = rt2_src.copy()
     rt2_a["Long"] = rt2_a["Long"] * 0
     rt2_b["Short"] = rt2_b["Short"] * 0
+
+    # Split BF proportionally to |qty| on each leg (50/50 when net qty is 0)
+    bf_total = (
+        rt2_src["Brokerage Fees Strategy"]
+        .fillna("BF=0")
+        .astype(str)
+        .str.replace("BF=", "", regex=False)
+        .pipe(pd.to_numeric, errors="coerce")
+        .fillna(0)
+    )
+    abs_long = rt2_src["Long"].abs()
+    abs_short = rt2_src["Short"].abs()
+    denom = (abs_long + abs_short).replace(0, np.nan)
+    rt2_a["Brokerage Fees Strategy"] = (
+        (bf_total * abs_short / denom).fillna(0).round(2).map(lambda x: f"BF={x:.2f}")
+    )
+    rt2_b["Brokerage Fees Strategy"] = (
+        (bf_total * abs_long / denom).fillna(0).round(2).map(lambda x: f"BF={x:.2f}")
+    )
+
     rt2 = pd.concat([rt2_a, rt2_b], ignore_index=True)
 
     rt2_ranked = rt2.copy()
@@ -473,6 +494,16 @@ def build_update_batches(
             else:
                 total_sf_qty = None
 
+            brokerage_fee_total = (
+                group["Brokerage Fees Strategy"]
+                .fillna("BF=0")
+                .astype(str)
+                .str.replace("BF=", "", regex=False)
+                .pipe(pd.to_numeric, errors="coerce")
+                .fillna(0)
+                .sum()
+            )
+
             for i, row in group.iterrows():
                 new_row = row.copy()
                 if pd.notna(row["Long"]) and row["Long"] != 0:
@@ -491,6 +522,11 @@ def build_update_batches(
                     new_row["Broker_Commission__c"] = bc * split_qty / total_sf_qty
                 else:
                     new_row["Broker_Commission__c"] = None
+
+                if total_sf_qty:
+                    new_row["Brokerage Fees Strategy"] = (
+                        f"BF={brokerage_fee_total * split_qty / total_sf_qty:.2f}"
+                    )
 
                 if i != 0:
                     new_row["Id"] = None
