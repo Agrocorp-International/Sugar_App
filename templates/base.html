@@ -409,19 +409,6 @@
           </li>
           {% endif %}
         </ul>
-        {% if _section == 'sugar' %}
-        <form method="POST" action="{{ url_for('sync.run_sync') }}" class="ms-3">
-          <button type="submit" class="btn btn-sm btn-outline-light">
-            <i class="bi bi-arrow-repeat me-1"></i>Sync Now
-          </button>
-        </form>
-        {% elif _section == 'cotton' %}
-        <form method="POST" action="{{ url_for('cotton_sync.run_sync') }}" class="ms-3">
-          <button type="submit" class="btn btn-sm btn-outline-light">
-            <i class="bi bi-arrow-repeat me-1"></i>Sync Now
-          </button>
-        </form>
-        {% endif %}
       </div>
     </div>
   </nav>
