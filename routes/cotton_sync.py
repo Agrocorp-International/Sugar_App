@@ -42,8 +42,12 @@ def run_sync():
                 parsed_book        = parts[3].strip()
                 parsed_region      = parts[4].strip()
                 bf_tag = parts[5].strip() if len(parts) == 6 else ''
-                bf_match = re.search(r'BF=([\d.]+)', bf_tag)
+                bf_match = re.search(r'BF=(\d+(?:\.\d+)?)', bf_tag)
                 parsed_bf = float(bf_match.group(1)) if bf_match else None
+                if bf_tag.startswith('BF=') and bf_match is None:
+                    current_app.logger.warning(
+                        f"Malformed BF= component for {sf_id}: '{bf_tag}' (Strategy__c='{strategy_str}')"
+                    )
             else:
                 parsed_instrument = parsed_spread = parsed_contract_xl = None
                 parsed_book = parsed_region = None
