@@ -486,16 +486,9 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="number" id="s3-num-strikes" step="1" min="1" class="form-control form-control-lg"
                style="font-size:1rem; min-width:120px;" placeholder="e.g. 25" value="25">
       </div>
-      <div style="border-left:1px solid #dee2e6; margin:0 .3rem;"></div>
-      <div>
-        <label class="form-label fw-semibold mb-1">Debug Strike</label>
-        <input type="number" id="s3-debug-strike" step="0.01" class="form-control form-control-lg"
-               style="font-size:1rem; min-width:120px;" placeholder="e.g. 16">
-      </div>
-      <div>
-        <label class="form-label fw-semibold mb-1">Debug Date</label>
-        <input type="date" id="s3-debug-date" class="form-control form-control-lg"
-               style="font-size:1rem; min-width:170px;">
+      <div style="display:none;">
+        <input type="number" id="s3-debug-strike" step="0.01" placeholder="e.g. 16">
+        <input type="date" id="s3-debug-date">
       </div>
       <button type="button" id="s3-generate-btn" class="btn btn-lg btn-action"
               style="background:#1a6b72; color:white; border:none; font-size:1rem; padding:0.6rem 1.4rem;">
