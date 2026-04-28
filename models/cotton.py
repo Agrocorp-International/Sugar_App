@@ -74,3 +74,65 @@ class CottonWatchedContract(db.Model):
 
     def __repr__(self):
         return f"<CottonWatchedContract {self.contract}>"
+
+
+class CottonSimLoadedFuture(db.Model):
+    __tablename__ = "cotton_sim_futures"
+
+    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    contract    = db.Column(db.String(50), nullable=False)
+    commodity   = db.Column(db.String(50))
+    net_lots    = db.Column(db.Float, default=0)
+    avg_price   = db.Column(db.Float, default=0)
+    settlement  = db.Column(db.Float, default=0)
+    lower_limit = db.Column(db.Float, default=0)
+    upper_limit = db.Column(db.Float, default=0)
+    expiry_date = db.Column(db.Date)
+    point_value = db.Column(db.Float, default=1)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CottonSimLoadedFuture {self.contract} {self.net_lots}>"
+
+
+class CottonSimLoadedOption(db.Model):
+    __tablename__ = "cotton_sim_options"
+
+    id               = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    contract         = db.Column(db.String(50), nullable=False)
+    underlying       = db.Column(db.String(50))
+    commodity        = db.Column(db.String(50))
+    put_call         = db.Column(db.String(10))
+    strike           = db.Column(db.Float, default=0)
+    net_lots         = db.Column(db.Float, default=0)
+    avg_price        = db.Column(db.Float, default=0)
+    settlement       = db.Column(db.Float, default=0)
+    underlying_price = db.Column(db.Float, default=0)
+    iv               = db.Column(db.Float, default=0)
+    iv_lower         = db.Column(db.Float, default=0)
+    iv_upper         = db.Column(db.Float, default=0)
+    expiry_date      = db.Column(db.Date)
+    point_value      = db.Column(db.Float, default=1)
+    r                = db.Column(db.Float, default=0)
+    delta            = db.Column(db.Float, default=0)
+    gamma            = db.Column(db.Float, default=0)
+    vega             = db.Column(db.Float, default=0)
+    theta            = db.Column(db.Float, default=0)
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CottonSimLoadedOption {self.contract} {self.net_lots}>"
+
+
+class CottonSimStack(db.Model):
+    __tablename__ = "cotton_sim_stacks"
+
+    id             = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    label          = db.Column(db.String(100), nullable=False)
+    x_axis         = db.Column(db.String(20))
+    commodity_code = db.Column(db.String(50))
+    data           = db.Column(db.JSON)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CottonSimStack {self.label}>"
