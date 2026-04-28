@@ -4,8 +4,13 @@ watchlist can display contract expiries and auto-expire stale contracts."""
 
 import os
 import re
+import json
 from datetime import datetime, timedelta, timezone
-from services.tradestation import fetch_prices as _ts_fetch_prices, _fetch_sofr
+from services.tradestation import (
+    fetch_prices as _ts_fetch_prices,
+    fetch_cotton_price_diagnostics,
+    _fetch_sofr,
+)
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort, current_app
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -29,6 +34,28 @@ OPTIONS_BASE_EXPIRY_MAP = {
 def _build_expiry_map():
     """Back-compat pass-through to the cached cotton option expiry map."""
     return OPTIONS_BASE_EXPIRY_MAP
+
+
+def _diagnostic_contracts_from_request():
+    """Return explicit contract query values, or a representative active CT option set."""
+    raw_values = request.args.getlist("contracts")
+    if not raw_values and request.args.get("contract"):
+        raw_values = [request.args.get("contract")]
+    contracts = []
+    for raw in raw_values:
+        contracts.extend(p.strip().upper().replace(" ", "") for p in re.split(r"[,\s]+", raw or ""))
+    contracts = [c for c in contracts if c]
+    if contracts:
+        return list(dict.fromkeys(contracts))
+
+    return [
+        wc.contract
+        for wc in CottonWatchedContract.query.filter_by(expired=False)
+                                             .order_by(CottonWatchedContract.sort_order,
+                                                       CottonWatchedContract.created_at)
+                                             .all()
+        if _OPTION_RE.match(wc.contract)
+    ][:5]
 
 
 @cotton_prices_bp.route("/prices")
@@ -104,6 +131,29 @@ def index():
         last_sett_sgt=last_sett_sgt,
         last_live_sgt=last_live_sgt,
     )
+
+
+@cotton_prices_bp.route("/prices/diagnostics")
+def diagnostics():
+    """Read-only cotton IV/delta reconciliation endpoint.
+
+    Usage:
+      /cotton/prices/diagnostics?contracts=CTK26C6900,CTN26P6500
+
+    If no contracts are supplied, the first five active watched cotton options
+    are diagnosed.
+    """
+    contracts = _diagnostic_contracts_from_request()
+    result = fetch_cotton_price_diagnostics(
+        contracts,
+        internal_expiry_map=OPTIONS_BASE_EXPIRY_MAP,
+    )
+    current_app.logger.info(
+        "cotton_price_diagnostics contracts=%s result=%s",
+        contracts,
+        json.dumps(result, default=str)[:4000],
+    )
+    return jsonify(result)
 
 
 def _run_sett1_fetch(include_live=False):

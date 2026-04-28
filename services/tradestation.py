@@ -390,6 +390,53 @@ def _black76_delta(F, K, T, r, sigma, is_call):
     return disc * _norm_cdf(d1) if is_call else -disc * _norm_cdf(-d1)
 
 
+def _select_option_settlement(q, today_date=None):
+    """Select the option settlement field and return diagnostics."""
+    trade_time_str = q.get("TradeTime", "")
+    try:
+        trade_date = datetime.date.fromisoformat(trade_time_str[:10]) if trade_time_str else None
+    except (ValueError, TypeError):
+        trade_date = None
+
+    if today_date is None:
+        today_date = datetime.date.today()
+
+    close = _to_float(q.get("Close"))
+    previous_close = _to_float(q.get("PreviousClose"))
+    if trade_date and trade_date == today_date:
+        return previous_close, "PreviousClose", trade_date, close, previous_close
+    return close, "Close", trade_date, close, previous_close
+
+
+def _solve_iv_delta_variants(market_price, F, K, T, is_call, sofr_rate):
+    """Return the main SOFR solve plus convention/rate comparison variants."""
+    out = {
+        "sofr_rate": sofr_rate,
+        "iv": None,
+        "delta_discounted": None,
+        "delta_undiscounted": None,
+        "zero_rate_iv": None,
+        "zero_rate_delta_discounted": None,
+        "zero_rate_delta_undiscounted": None,
+    }
+    if not _validate_option_inputs(F, market_price, T):
+        return out
+
+    iv = _implied_vol_bisect(market_price, F, K, T, sofr_rate, is_call)
+    out["iv"] = iv
+    if iv is not None:
+        out["delta_discounted"] = _black76_delta(F, K, T, sofr_rate, iv, is_call)
+        disc = math.exp(-sofr_rate * T)
+        out["delta_undiscounted"] = out["delta_discounted"] / disc if disc else None
+
+    zero_iv = _implied_vol_bisect(market_price, F, K, T, 0.0, is_call)
+    out["zero_rate_iv"] = zero_iv
+    if zero_iv is not None:
+        out["zero_rate_delta_discounted"] = _black76_delta(F, K, T, 0.0, zero_iv, is_call)
+        out["zero_rate_delta_undiscounted"] = out["zero_rate_delta_discounted"]
+    return out
+
+
 
 def _norm_pdf(x):
     return math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
@@ -671,17 +718,8 @@ def fetch_prices(contracts):
         # Determine settlement price based on TradeTime vs today:
         #   TradeTime == today → market open today, Close is live → use PreviousClose
         #   TradeTime != today → market closed → Close is last settlement → use Close
+        settlement, _, _, _, _ = _select_option_settlement(q)
         trade_time_str = q.get("TradeTime", "")
-        try:
-            trade_date = datetime.date.fromisoformat(trade_time_str[:10]) if trade_time_str else None
-        except (ValueError, TypeError):
-            trade_date = None
-
-        today_date = datetime.date.today()
-        if trade_date and trade_date == today_date:
-            settlement = _to_float(q.get("PreviousClose"))
-        else:
-            settlement = _to_float(q.get("Close"))
 
         if settlement is None or settlement <= 0:
             errors.append(f"{contract}: no settlement price (TradeTime={trade_time_str}), skipped")
@@ -781,6 +819,157 @@ def fetch_prices(contracts):
         r["sett_date"] = sett_date
 
     return results, errors, sett_date
+
+
+def fetch_cotton_price_diagnostics(contracts, internal_expiry_map=None):
+    """Fetch cotton option pricing inputs and comparison variants.
+
+    This is intentionally read-only: it does not update CottonMarketPrice. It
+    exists to reconcile app IV/delta against broker/ICE screen conventions.
+    """
+    diagnostics = []
+    errors = []
+    internal_expiry_map = internal_expiry_map or {}
+
+    option_contracts = [
+        c.strip().upper().replace(" ", "")
+        for c in contracts
+        if c and is_option_contract(c.strip().upper().replace(" ", ""))
+        and c.strip().upper().replace(" ", "").startswith("CT")
+    ]
+    option_contracts = list(dict.fromkeys(option_contracts))
+    if not option_contracts:
+        return {"diagnostics": diagnostics, "errors": ["No cotton option contracts supplied."]}
+
+    try:
+        token = get_access_token()
+    except RuntimeError as e:
+        return {"diagnostics": diagnostics, "errors": [str(e)]}
+    headers = {"Authorization": f"Bearer {token}"}
+
+    symbol_map, malformed = build_fetch_symbol_map(option_contracts)
+    for c in malformed:
+        errors.append(f"{c}: malformed contract code, skipped")
+    if not symbol_map:
+        return {"diagnostics": diagnostics, "errors": errors}
+
+    try:
+        quote_map = _batch_quotes(list(symbol_map.keys()), headers)
+    except RuntimeError as e:
+        return {"diagnostics": diagnostics, "errors": errors + [str(e)]}
+
+    pricing_base_date = _get_pricing_base_date()
+    sofr_rate, sofr_date = _fetch_sofr(pricing_base_date)
+    underlying_ts_syms = {
+        to_tradestation_symbol(get_underlying_contract(c))
+        for c in option_contracts
+        if get_underlying_contract(c)
+    } - {None}
+    bar_closes = _bulk_bar_settlements(list(underlying_ts_syms), pricing_base_date, headers)
+
+    for contract in option_contracts:
+        parsed = parse_option_contract(contract)
+        if parsed is None:
+            continue
+        base, pc, strike_int = parsed
+        prefix = base[:2]
+        ts_sym = to_tradestation_symbol(contract)
+        ul_ts_sym = to_tradestation_symbol(base)
+        q = quote_map.get(ts_sym)
+        ul_q = quote_map.get(ul_ts_sym)
+        if q is None:
+            errors.append(f"{contract}: no option quote returned by API (ts_sym={ts_sym})")
+            continue
+
+        settlement, field_used, trade_date, close, previous_close = _select_option_settlement(q)
+        F, sett_bar_date = bar_closes.get(ul_ts_sym, (None, None))
+        K = strike_int * _STRIKE_SCALE.get(prefix, 0.01)
+        last_trading_date = q.get("LastTradingDate")
+        expiry_date = None
+        if last_trading_date:
+            try:
+                expiry_date = datetime.datetime.fromisoformat(
+                    last_trading_date.replace("Z", "+00:00")
+                ).date()
+            except (ValueError, TypeError):
+                expiry_date = None
+        days_to_expiry = (expiry_date - sett_bar_date).days if expiry_date and sett_bar_date else None
+        T_sett = _compute_T_from_last_trading_date(last_trading_date, base=sett_bar_date)
+        is_call = pc == "C"
+        variants = _solve_iv_delta_variants(settlement, F, K, T_sett, is_call, sofr_rate)
+        displayed_delta = variants["delta_discounted"]
+
+        if ul_q:
+            ul_bid = _to_float(ul_q.get("Bid"))
+            ul_ask = _to_float(ul_q.get("Ask"))
+            ul_last = _to_float(ul_q.get("Last"))
+        else:
+            ul_bid = ul_ask = ul_last = None
+
+        internal_expiry = internal_expiry_map.get(base)
+        diagnostics.append({
+            "contract": contract,
+            "tradestation_symbol": ts_sym,
+            "underlying_contract": base,
+            "underlying_tradestation_symbol": ul_ts_sym,
+            "option_type": pc,
+            "strike_int": strike_int,
+            "strike_scale": _STRIKE_SCALE.get(prefix, 0.01),
+            "strike": K,
+            "quote": {
+                "field_used": field_used,
+                "settlement": settlement,
+                "close": close,
+                "previous_close": previous_close,
+                "trade_time": q.get("TradeTime"),
+                "trade_date": trade_date.isoformat() if trade_date else None,
+                "bid": _to_float(q.get("Bid")),
+                "ask": _to_float(q.get("Ask")),
+                "last": _to_float(q.get("Last")),
+            },
+            "underlying": {
+                "settlement_used": F,
+                "settlement_bar_date": sett_bar_date.isoformat() if sett_bar_date else None,
+                "bid": ul_bid,
+                "ask": ul_ask,
+                "last": ul_last,
+                "trade_time": ul_q.get("TradeTime") if ul_q else None,
+            },
+            "expiry": {
+                "tradestation_last_trading_date": last_trading_date,
+                "tradestation_expiry_date": expiry_date.isoformat() if expiry_date else None,
+                "internal_cotton_expiry_date": internal_expiry.isoformat() if internal_expiry else None,
+                "days_to_expiry": days_to_expiry,
+                "T": T_sett,
+            },
+            "rates": {
+                "sofr_rate": sofr_rate,
+                "sofr_date": sofr_date,
+                "zero_rate": 0.0,
+            },
+            "results": {
+                "iv": variants["iv"],
+                "iv_pct": variants["iv"] * 100 if variants["iv"] is not None else None,
+                "delta_convention": "discounted",
+                "displayed_delta": displayed_delta,
+                "delta_discounted": variants["delta_discounted"],
+                "delta_undiscounted": variants["delta_undiscounted"],
+                "zero_rate_iv": variants["zero_rate_iv"],
+                "zero_rate_iv_pct": (
+                    variants["zero_rate_iv"] * 100
+                    if variants["zero_rate_iv"] is not None else None
+                ),
+                "zero_rate_delta_discounted": variants["zero_rate_delta_discounted"],
+                "zero_rate_delta_undiscounted": variants["zero_rate_delta_undiscounted"],
+            },
+        })
+
+    return {
+        "pricing_base_date": pricing_base_date.isoformat(),
+        "delta_convention": "discounted",
+        "diagnostics": diagnostics,
+        "errors": errors,
+    }
 
 
 import logging
