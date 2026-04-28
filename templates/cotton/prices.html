@@ -39,7 +39,7 @@
     </div>
     <div class="mt-1">
       {% for c in missing_prices %}
-        <span class="badge bg-secondary me-1">{{ c }}</span>
+        <span class="badge bg-secondary me-1">{{ c|format_cotton_contract }}</span>
       {% endfor %}
     </div>
   </div>
@@ -134,7 +134,7 @@
         <tr data-id="{{ wc.id }}">
           <td class="text-muted drag-handle" style="cursor:grab; user-select:none;">&#8942;&#8942;</td>
           <td class="fw-semibold">
-            {{ wc.contract|format_contract }}
+            {{ wc.contract|format_cotton_contract }}
             {% if not mp %}
               <span class="badge bg-danger ms-1" title="No settlement price loaded">No price</span>
             {% endif %}
@@ -215,7 +215,7 @@
         {% set mp = price_map.get(wc.contract) %}
         <tr class="text-muted">
           <td class="fw-semibold">
-            {{ wc.contract|format_contract }}
+            {{ wc.contract|format_cotton_contract }}
             {% if not mp %}
               <span class="badge bg-danger ms-1" title="No settlement price loaded">No price</span>
             {% endif %}

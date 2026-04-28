@@ -293,7 +293,7 @@
             {% set contract = (position.data.get('Contract__c') or '')|replace(' ', '') %}
             {% set put_call = position.data.get('Put_Call_2__c') %}
             {% set strike_v = position.data.get('Strike__c') %}
-            <td class="editable-cell" data-field="Contract__c" data-value="{{ contract }}">{%- if put_call and strike_v is not none -%}{{ contract|format_contract }}{{ put_call[0] }}{{ (strike_v * 100)|round|int }}{%- else -%}{{ contract|format_contract }}{%- endif -%}</td>
+            <td class="editable-cell" data-field="Contract__c" data-value="{{ contract }}">{%- if put_call and strike_v is not none -%}{{ (contract ~ put_call[0] ~ ((strike_v * 100)|round|int))|format_cotton_contract }}{%- else -%}{{ contract|format_cotton_contract }}{%- endif -%}</td>
             <td class="editable-cell col-secondary" data-field="instrument" data-value="{{ position.instrument or '' }}">{{ position.instrument or '—' }}</td>
             <td class="editable-cell col-secondary" data-field="spread" data-value="{{ position.spread or '' }}">{{ position.spread or '—' }}</td>
             <td class="editable-cell col-secondary" data-field="Trader__c" data-value="{{ position.data.get('Trader__c') or '' }}">{{ position.data.get('Trader__c') or '' }}</td>

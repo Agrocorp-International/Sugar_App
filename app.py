@@ -113,6 +113,25 @@ def create_app():
             return value[:2] + ' ' + value[2:]
         return value
 
+    @app.template_filter("format_cotton_contract")
+    def format_cotton_contract(value):
+        """Display CT option strikes without the redundant final two zeros."""
+        formatted = format_contract(value)
+        compact = (formatted or '').replace(' ', '')
+        if len(compact) <= 5 or compact[:2].upper() != 'CT':
+            return formatted
+
+        option_type_idx = max(compact.rfind('C'), compact.rfind('P'))
+        if option_type_idx <= 4 or option_type_idx == len(compact) - 1:
+            return formatted
+
+        strike = compact[option_type_idx + 1:]
+        if not strike.isdigit():
+            return formatted
+        if strike.endswith('00') and len(strike) > 2:
+            strike = strike[:-2]
+        return format_contract(compact[:option_type_idx + 1] + strike)
+
     with app.app_context():
         db.create_all()
         # Lightweight idempotent migration: add per-mode fetch timestamp
