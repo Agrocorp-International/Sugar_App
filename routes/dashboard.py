@@ -15,10 +15,109 @@ from services.schedule import is_due
 from services.var_summary import compute_var_summary
 from services.pnl_attribution import compute_attribution
 from services.cache import get_or_compute, positions_version, prices_version
+from services.price_source import resolve_iv, resolve_price
 
 _DTE_WARN_DAYS = 10  # highlight DTE column when this close to expiry
 
 dashboard_bp = Blueprint("dashboard", __name__)
+
+
+def _build_options_diagram_rows(as_of, price_source):
+    """Build the dashboard options exposure table from the same inputs as Options."""
+    from routes.options import _compute_greeks, _spec_options_query
+    from routes.positions import build_contract_key
+    from routes.prices import _OPTION_RE, _build_expiry_map
+
+    positions = [
+        p for p in _spec_options_query()
+        if p.data.get("Put_Call_2__c") and p.data.get("Strike__c") is not None
+    ]
+    if not positions:
+        return []
+
+    keys = set()
+    for p in positions:
+        d = p.data
+        keys.add(build_contract_key(d))
+        keys.add((d.get("Contract__c") or "").replace(" ", ""))
+
+    price_map = {
+        mp.contract: mp
+        for mp in MarketPrice.query.filter(MarketPrice.contract.in_(keys)).all()
+    }
+    expiry_map = _build_expiry_map()
+    greeks_map, _ = _compute_greeks(positions, price_map, as_of, price_source)
+
+    rows_by_contract = {}
+    for p in positions:
+        d = p.data
+        option_key = build_contract_key(d)
+        match = _OPTION_RE.match(option_key)
+        if not match:
+            continue
+
+        underlying = (d.get("Contract__c") or "").replace(" ", "")
+        option_mp = price_map.get(option_key)
+        underlying_mp = price_map.get(underlying)
+        iv = resolve_iv(option_mp, price_source)
+        underlying_price = resolve_price(underlying_mp, price_source)
+        expiry = expiry_map.get(underlying)
+        net_lots = float(d.get("Long__c") or 0) + float(d.get("Short__c") or 0)
+        greeks = greeks_map.get(p.sf_id)
+
+        gamma_cents = vega_dollars = theta_dollars = None
+        if greeks and net_lots:
+            gamma_cents = greeks["gamma"]
+            vega_dollars = greeks["vega"]
+            theta_dollars = greeks["theta"]
+
+        row = rows_by_contract.setdefault(option_key, {
+            "option_key": option_key,
+            "underlying": underlying,
+            "underlying_price": underlying_price,
+            "put_call": (d.get("Put_Call_2__c") or "")[:1].upper(),
+            "strike": d.get("Strike__c"),
+            "dte": (expiry - as_of).days if expiry else None,
+            "iv": iv,
+            "lots": 0.0,
+            "gamma": None,
+            "vega": None,
+            "theta": None,
+            "gamma_cents": None,
+            "vega_dollars": None,
+            "theta_dollars": None,
+        })
+        row["lots"] += net_lots
+        if gamma_cents is not None:
+            row["gamma_cents"] = (row["gamma_cents"] or 0.0) + gamma_cents
+        if vega_dollars is not None:
+            row["vega_dollars"] = (row["vega_dollars"] or 0.0) + vega_dollars
+        if theta_dollars is not None:
+            row["theta_dollars"] = (row["theta_dollars"] or 0.0) + theta_dollars
+
+    for row in rows_by_contract.values():
+        lots = row["lots"]
+        if lots and row["gamma_cents"] is not None:
+            row["gamma"] = row["gamma_cents"] / lots
+        if lots and row["vega_dollars"] is not None:
+            row["vega"] = row["vega_dollars"] / (lots * 1120)
+        if lots and row["theta_dollars"] is not None:
+            row["theta"] = row["theta_dollars"] / (lots * 1120)
+
+    rows = sorted(
+        rows_by_contract.values(),
+        key=lambda r: (r["underlying"], r["put_call"], r["strike"] or 0, r["option_key"]),
+    )
+    totals = {
+        "lots": sum(r["lots"] for r in rows),
+        "gamma": sum(r["gamma"] * r["lots"] for r in rows if r["gamma"] is not None),
+        "vega": sum(r["vega"] * r["lots"] for r in rows if r["vega"] is not None),
+        "theta": sum(r["theta"] * r["lots"] for r in rows if r["theta"] is not None),
+        "gamma_cents": sum(r["gamma_cents"] for r in rows if r["gamma_cents"] is not None),
+        "vega_dollars": sum(r["vega_dollars"] for r in rows if r["vega_dollars"] is not None),
+        "theta_dollars": sum(r["theta_dollars"] for r in rows if r["theta_dollars"] is not None),
+    }
+    return {"rows": rows, "totals": totals}
 
 
 @dashboard_bp.route("/")
@@ -185,6 +284,16 @@ def index():
     ]
     upcoming_rows = [r for r in upcoming_rows if r is not None]
 
+    try:
+        options_diagram = get_or_compute(
+            key=("dashboard.options_diagram.v4",) + _dash_key + (as_of,),
+            ttl=120,
+            fn=lambda: _build_options_diagram_rows(as_of, price_source),
+        )
+    except Exception:
+        current_app.logger.exception("dashboard.options_diagram failed")
+        options_diagram = {"rows": [], "totals": None}
+
     return render_template(
         "dashboard.html",
         total_positions=total_positions,
@@ -200,6 +309,7 @@ def index():
         price_source=price_source,
         var_summary=var_summary,
         pnl_attribution=pnl_attribution,
+        options_diagram=options_diagram,
     )
 
 

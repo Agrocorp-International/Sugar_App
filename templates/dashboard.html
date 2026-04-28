@@ -245,6 +245,73 @@
     margin-top: 0.5rem;
     line-height: 1.3;
   }
+
+  /* Dashboard options diagram */
+  .dash-options-card {
+    border: none;
+    margin-top: 1rem;
+  }
+  .dash-options-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .dash-options-count {
+    color: var(--dash-label);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .dash-options-wrap {
+    overflow-x: auto;
+    border: 1px solid #d9d9d9;
+  }
+  .dash-options-table {
+    width: 100%;
+    min-width: 1120px;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    line-height: 1.15;
+    background: #fff;
+  }
+  .dash-options-table th,
+  .dash-options-table td {
+    border: 1px solid #d9d9d9;
+    padding: 0.28rem 0.45rem;
+    white-space: nowrap;
+  }
+  .dash-options-table th {
+    background: #fff;
+    color: #000;
+    font-weight: 700;
+    text-align: center;
+  }
+  .dash-options-table td {
+    color: #000;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .dash-options-table td.dash-opt-contract,
+  .dash-options-table td.dash-opt-type {
+    text-align: center;
+  }
+  .dash-options-table td.dash-opt-missing {
+    color: #000;
+    text-align: center;
+  }
+  .dash-options-table tr.dash-opt-total td {
+    background: #fff2cc;
+    border-bottom: 2px solid #000;
+    font-weight: 700;
+  }
+  .dash-options-table .dash-neg {
+    color: #ff0000;
+  }
+  .dash-options-table .dash-pos {
+    color: #000;
+  }
 </style>
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -745,6 +812,76 @@
   </div>
 
 </div>
+
+{% if options_diagram and options_diagram.rows %}
+{% macro opt_num(v, pattern, blank=false) -%}
+  {%- if v is none -%}
+    {%- if blank -%}<span class="dash-opt-missing">-</span>{%- else -%}<span class="dash-opt-missing">Not Found</span>{%- endif -%}
+  {%- else -%}
+    <span class="{% if v < 0 %}dash-neg{% else %}dash-pos{% endif %}">{{ pattern.format(v) }}</span>
+  {%- endif -%}
+{%- endmacro %}
+<div class="dash-options-card card p-4">
+  <div class="dash-options-head">
+    <div class="dash-bot-title mb-0">Options</div>
+    <div class="dash-options-count">{{ options_diagram.rows|length }} open Spec option{{ '' if options_diagram.rows|length == 1 else 's' }}</div>
+  </div>
+  <div class="dash-options-wrap">
+    <table class="dash-options-table">
+      <thead>
+        {% set t = options_diagram.totals %}
+        {% if t %}
+        <tr class="dash-opt-total">
+          <td colspan="8">Total</td>
+          <td>{{ opt_num(t.gamma, "{:,.4f}", true) }}</td>
+          <td>{{ opt_num(t.vega, "{:,.4f}", true) }}</td>
+          <td>{{ opt_num(t.theta, "{:,.4f}", true) }}</td>
+          <td>{{ opt_num(t.gamma_cents, "{:,.0f}", true) }}</td>
+          <td>{{ opt_num(t.vega_dollars, "{:,.0f}", true) }}</td>
+          <td>{{ opt_num(t.theta_dollars, "{:,.0f}", true) }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+          <th>Contract</th>
+          <th>Contract</th>
+          <th>Underlying Price</th>
+          <th>Call/Put</th>
+          <th>Strike</th>
+          <th>DTE</th>
+          <th>IV</th>
+          <th>Lots</th>
+          <th>Gamma</th>
+          <th>Vega</th>
+          <th>Theta</th>
+          <th>Gamma c</th>
+          <th>Vega $</th>
+          <th>Theta $</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in options_diagram.rows %}
+        <tr>
+          <td class="dash-opt-contract">{{ r.option_key|format_contract }}</td>
+          <td class="dash-opt-contract">{{ r.underlying|format_contract }}</td>
+          <td>{{ opt_num(r.underlying_price, "{:,.2f}", true) }}</td>
+          <td class="dash-opt-type">{{ r.put_call }}</td>
+          <td>{{ opt_num(r.strike, "{:,.2f}", true) }}</td>
+          <td class="{% if r.dte is not none and r.dte < 0 %}dash-neg{% endif %}">{% if r.dte is none %}-{% else %}{{ "{:,.0f}".format(r.dte) }}{% endif %}</td>
+          <td>{% if r.iv is none %}<span class="dash-opt-missing">Not Found</span>{% else %}{{ "{:.2%}".format(r.iv) }}{% endif %}</td>
+          <td class="{% if r.lots < 0 %}dash-neg{% endif %}">{{ "{:,.0f}".format(r.lots) }}</td>
+          <td>{{ opt_num(r.gamma, "{:,.4f}", true) }}</td>
+          <td>{{ opt_num(r.vega, "{:,.4f}", true) }}</td>
+          <td>{{ opt_num(r.theta, "{:,.4f}", true) }}</td>
+          <td>{{ opt_num(r.gamma_cents, "{:,.0f}", true) }}</td>
+          <td>{{ opt_num(r.vega_dollars, "{:,.0f}", true) }}</td>
+          <td>{{ opt_num(r.theta_dollars, "{:,.0f}", true) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 </div>
 
