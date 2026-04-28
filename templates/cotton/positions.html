@@ -161,9 +161,6 @@
   <div class="d-flex align-items-center gap-2">
     <span class="text-muted small">{{ pagination.total }} records</span>
     {# strategy_warnings not wired for cotton v1 — omitted #}
-    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#clearAllModal">
-      <i class="bi bi-trash me-1"></i>Clear All Trades
-    </button>
     <span class="d-flex align-items-center gap-2 ms-3" style="font-size:0.95em;">
       <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#d4d8dc;border-radius:2px;font-size:11px;font-weight:600;">COL</span><span class="text-muted">Editable</span>
       <span style="display:inline-block;padding:1px 6px;background:#545b62;color:#ffc107;border-radius:2px;font-size:11px;font-weight:600;margin-left:6px;">COL</span><span class="text-muted">Calculated</span>
@@ -284,7 +281,7 @@
           {% set settlement2 = settlement2_map.get(position.sf_id) %}
           {% set pnl = pnl_map.get(position.sf_id) %}
           {% set pnl_change = pnl_change_map.get(position.sf_id) %}
-          {% set commission = position.data.get('Broker_Commission__c') or 0 %}
+          {% set commission = position.commission %}
 
           <tr data-sf-id="{{ position.sf_id }}" {% if not strategy_valid %}class="table-warning"{% endif %}>
             <td><input type="checkbox" class="row-check" value="{{ position.sf_id }}"></td>
@@ -359,7 +356,7 @@
             <td class="text-num col-secondary">{{ "%.2f"|format(settlement2) if settlement2 is not none else '—' }}</td>
             <td class="editable-cell text-num col-secondary" data-field="Strike__c" data-value="{{ strike_v if strike_v is not none else '' }}">{{ "%.2f"|format(strike_v) if strike_v is not none else '' }}</td>
             <td class="editable-cell text-status col-secondary" data-field="Put_Call_2__c" data-value="{{ put_call or '' }}">{{ put_call or '' }}</td>
-            <td class="editable-cell text-num col-secondary" data-field="Broker_Commission__c" data-value="{{ position.data.get('Broker_Commission__c') or '' }}">{{ "%.2f"|format(commission) }}</td>
+            <td class="text-num col-secondary">{{ "%.2f"|format(commission) }}</td>
 
             {# ── RISK (1) ── #}
             <td class="text-num">{{ "%.2f"|format(delta) if delta is not none else '—' }}</td>
@@ -412,23 +409,22 @@
 
   <!-- Pagination -->
   {% if pagination.pages > 1 %}
-  {% set qs %}{% if date_filter %}&date_filter={{ date_filter }}{% endif %}{% if contract_filter %}&contract_filter={{ contract_filter }}{% endif %}{% if price_filter %}&price_filter={{ price_filter }}{% endif %}{% if book_filter %}&book_filter={{ book_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if contract_xl_filter %}&contract_xl_filter={{ contract_xl_filter }}{% endif %}{% if instrument_filter %}&instrument_filter={{ instrument_filter }}{% endif %}{% if spread_filter %}&spread_filter={{ spread_filter }}{% endif %}{% endset %}
   <nav class="mt-3">
     <ul class="pagination pagination-sm justify-content-center">
       <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-        <a class="page-link" href="?page={{ pagination.prev_num }}{{ qs }}">Previous</a>
+        <a class="page-link" href="{{ page_url(pagination.prev_num) if pagination.has_prev else '#' }}">Previous</a>
       </li>
       {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
         {% if p %}
           <li class="page-item {% if p == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}{{ qs }}">{{ p }}</a>
+            <a class="page-link" href="{{ page_url(p) }}">{{ p }}</a>
           </li>
         {% else %}
           <li class="page-item disabled"><span class="page-link">…</span></li>
         {% endif %}
       {% endfor %}
       <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-        <a class="page-link" href="?page={{ pagination.next_num }}{{ qs }}">Next</a>
+        <a class="page-link" href="{{ page_url(pagination.next_num) if pagination.has_next else '#' }}">Next</a>
       </li>
     </ul>
   </nav>
@@ -437,32 +433,15 @@
 {% else %}
   <div class="text-center text-muted py-5">
     <i class="bi bi-inbox fs-1"></i>
-    <p class="mt-2">No trade positions yet. Click <strong>Sync Now</strong> on the dashboard to pull data from Salesforce.</p>
-    <a href="{{ url_for('cotton_dashboard.index') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+    {% if active_count > 0 %}
+      <p class="mt-2">No positions match these filters.</p>
+      <a href="{{ url_for('cotton_positions.index') }}" class="btn btn-outline-secondary btn-sm">Clear Filters</a>
+    {% else %}
+      <p class="mt-2">No trade positions yet. Click <strong>Sync Now</strong> on the dashboard to pull data from Salesforce.</p>
+      <a href="{{ url_for('cotton_dashboard.index') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+    {% endif %}
   </div>
 {% endif %}
-
-<!-- Clear All confirmation modal -->
-<div class="modal fade" id="clearAllModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h6 class="modal-title mb-0 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Clear All Trades</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body py-3">
-        <p class="mb-1">This will delete all <strong>{{ pagination.total }}</strong> trade records from the local database.</p>
-        <p class="text-muted small mb-0">You can re-sync from Salesforce afterwards.</p>
-      </div>
-      <div class="modal-footer py-2">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <form method="POST" action="{{ url_for('cotton_positions.clear_all') }}" style="display:inline;">
-          <button type="submit" class="btn btn-danger btn-sm">Yes, Clear All</button>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Bulk scope modal -->
 <div class="modal fade" id="bulkApplyModal" tabindex="-1" data-bs-backdrop="static">

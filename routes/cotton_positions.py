@@ -1,7 +1,9 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
 from sqlalchemy import cast, Date, or_
 from models.db import db
-from models.cotton import CottonTradePosition, CottonMarketPrice
+from models.cotton import CottonTradePosition
+from services.request_cache import get_all_cotton_market_prices
+from urllib.parse import urlencode
 
 cotton_positions_bp = Blueprint("cotton_positions", __name__)
 
@@ -38,7 +40,7 @@ def compute_maps(positions, source='sett1'):
     lot multipliers.
     """
     from services.price_source import resolve_price, resolve_delta
-    market = {mp.contract: mp for mp in CottonMarketPrice.query.all()}
+    market = {mp.contract: mp for mp in get_all_cotton_market_prices()}
     _latest = CottonTradePosition.query.order_by(
         cast(CottonTradePosition.data["Trade_Date__c"].as_string(), Date).desc()
     ).first()
@@ -76,7 +78,7 @@ def compute_maps(positions, source='sett1'):
             pnl_map[pos.sf_id] = None
         trade_date = pos.data.get('Trade_Date__c')
         if trade_date == latest_date:
-            commission = pos.data.get('Broker_Commission__c') or 0
+            commission = pos.commission
             pnl_change_map[pos.sf_id] = pnl_map[pos.sf_id] + commission if pnl_map[pos.sf_id] is not None else None
         elif mkt is not None and mkt2 is not None and mult:
             pnl_change_map[pos.sf_id] = (mkt - mkt2) * (long_ + short_) * mult
@@ -103,6 +105,11 @@ def index():
     spread_filter      = _multi_arg("spread_filter")
     status_filter      = _multi_arg("status_filter")
     trade_id_filter    = _multi_arg("trade_id_filter")
+
+    def page_url(page_num):
+        params = request.args.to_dict(flat=False)
+        params["page"] = [page_num]
+        return "?" + urlencode(params, doseq=True)
 
     query = CottonTradePosition.query.order_by(
         cast(CottonTradePosition.data["Trade_Date__c"].as_string(), Date).desc()
@@ -193,7 +200,7 @@ def index():
     for _pos in all_filtered:
         _pnl = _all_pnl_map.get(_pos.sf_id)
         if _pnl is not None:
-            _comm = float(_pos.data.get('Broker_Commission__c') or 0)
+            _comm = _pos.commission
             total_pnl += _pnl
             total_net_pnl += _pnl + _comm
         _delta = _all_delta_map.get(_pos.sf_id)
@@ -263,6 +270,7 @@ def index():
         total_position=total_position, total_spread_pos=total_spread_pos,
         invalid_strategy_count=0,
         price_source=price_source,
+        page_url=page_url,
     )
 
 
@@ -277,7 +285,7 @@ ALLOWED_FIELDS = {
 }
 CONTRACT_REF_FIELDS = {"New_AGP__r.Name", "New_AGS__r.Name"}
 NUMERIC_FIELDS = {"Long__c", "Short__c", "Price__c", "Strike__c", "Broker_Commission__c"}
-# Cotton has 5 parsed strategy columns (adds 'region' vs sugar's 4).
+# Cotton has 5 editable parsed strategy columns, plus a non-editable BF=fee component.
 STRATEGY_FIELDS = {"instrument", "spread", "contract_xl", "book_parsed", "region"}
 
 
@@ -307,6 +315,18 @@ def _validate_strategy_component(value):
     if '-' in v:
         raise ValueError(f"Strategy component cannot contain a hyphen: '{v}'")
     return v
+
+
+def _strategy_bf_component(pos):
+    """Return the non-editable BF=... Strategy__c component for a cotton position."""
+    if pos.bf_parsed is not None:
+        return f"BF={pos.bf_parsed:.2f}"
+    parts = ((pos.data or {}).get("Strategy__c") or "").split("-", 5)
+    if len(parts) == 6:
+        bf_component = parts[5].strip()
+        if bf_component.startswith("BF="):
+            return bf_component
+    return "BF=0.00"
 
 
 @cotton_positions_bp.route("/positions/api/update", methods=["POST"])
@@ -363,7 +383,8 @@ def api_update():
             else:
                 return jsonify({"error": f"Unknown field: {field}"}), 400
 
-        # Reconstruct Strategy__c as 5-part cotton format.
+        # Reconstruct Strategy__c as 6-part cotton format, preserving the
+        # non-editable brokerage fee component.
         # Recompute Book__c whenever book_parsed OR contract_xl changed, since
         # the "Physical" mapping depends on whether XL Ref starts with AGP/AGS.
         book_recompute_ids = (
@@ -371,12 +392,13 @@ def api_update():
             | contract_xl_touched_ids
         )
         for sf_id, pos in strategy_touched_pos.items():
-            new_strategy = "{}-{}-{}-{}-{}".format(
+            new_strategy = "{}-{}-{}-{}-{}-{}".format(
                 pos.instrument or '',
                 pos.spread or '',
                 pos.contract_xl or '',
                 pos.book_parsed or '',
                 pos.region or '',
+                _strategy_bf_component(pos),
             )
             new_data = dict(pos.data)
             new_data['Strategy__c'] = new_strategy
@@ -507,18 +529,6 @@ def api_update():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-
-
-@cotton_positions_bp.route("/positions/clear-all", methods=["POST"])
-def clear_all():
-    try:
-        deleted = CottonTradePosition.query.delete()
-        db.session.commit()
-        flash(f"Cleared {deleted} cotton trade(s). You can now re-sync from Salesforce.", "success")
-    except Exception as e:
-        db.session.rollback()
-        flash(f"Failed to clear trades: {e}", "danger")
-    return redirect(url_for("cotton_positions.index"))
 
 
 @cotton_positions_bp.route("/positions/delete/<sf_id>", methods=["POST"])

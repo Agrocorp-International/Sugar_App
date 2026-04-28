@@ -1,5 +1,5 @@
--- Cotton v2 migration: add 5-part Strategy__c parsed columns to cotton_trade_positions.
--- The 5th column `region` is cotton-only (sugar Strategy__c is 4-part).
+-- Cotton v2 migration: add Strategy__c parsed columns to cotton_trade_positions.
+-- Cotton Strategy__c is now 6-part: Instrument-Spread-ContractXL-Book-Region-BF=fee.
 --
 -- Run once against Azure Postgres before starting the app on v2:
 --   psql "host=... dbname=... user=..." -f scripts/migrate_cotton_v2.sql
@@ -13,4 +13,5 @@ ALTER TABLE cotton_trade_positions
   ADD COLUMN IF NOT EXISTS spread       VARCHAR(100),
   ADD COLUMN IF NOT EXISTS contract_xl  VARCHAR(100),
   ADD COLUMN IF NOT EXISTS book_parsed  VARCHAR(100),
-  ADD COLUMN IF NOT EXISTS region       VARCHAR(100);
+  ADD COLUMN IF NOT EXISTS region       VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS bf_parsed    DOUBLE PRECISION;

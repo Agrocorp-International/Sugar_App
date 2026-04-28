@@ -166,6 +166,10 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS sett_fetched_at TIMESTAMP, "
             "ADD COLUMN IF NOT EXISTS live_fetched_at TIMESTAMP"
         ))
+        db.session.execute(text(
+            "ALTER TABLE cotton_trade_positions "
+            "ADD COLUMN IF NOT EXISTS bf_parsed DOUBLE PRECISION"
+        ))
         db.session.commit()
 
     return app

@@ -3,6 +3,7 @@ from flask import Blueprint, redirect, url_for, flash, current_app
 from models.db import db
 from models.cotton import CottonTradePosition, CottonSyncLog
 from services.salesforce import get_sf_connection, fetch_trade_records
+import re
 
 cotton_sync_bp = Blueprint("cotton_sync", __name__)
 
@@ -29,18 +30,24 @@ def run_sync():
             sf_id = rec.get("Id")
             if not sf_id:
                 continue
-            # Cotton Strategy__c is 5-part: Instrument-Spread-ContractXL-Book-Region
+            # Cotton Strategy__c is 6-part:
+            # Instrument-Spread-ContractXL-Book-Region-BF=fee.
+            # Legacy 5-part rows are accepted with bf_parsed=None.
             strategy_str = rec.get('Strategy__c') or ''
-            parts = strategy_str.split('-', 4)
-            if len(parts) == 5:
+            parts = strategy_str.split('-', 5)
+            if len(parts) in (5, 6):
                 parsed_instrument  = parts[0].strip()
                 parsed_spread      = parts[1].strip()
                 parsed_contract_xl = parts[2].strip()
                 parsed_book        = parts[3].strip()
                 parsed_region      = parts[4].strip()
+                bf_tag = parts[5].strip() if len(parts) == 6 else ''
+                bf_match = re.search(r'BF=([\d.]+)', bf_tag)
+                parsed_bf = float(bf_match.group(1)) if bf_match else None
             else:
                 parsed_instrument = parsed_spread = parsed_contract_xl = None
                 parsed_book = parsed_region = None
+                parsed_bf = None
                 if strategy_str:
                     current_app.logger.warning(
                         f"Invalid cotton Strategy__c format for {sf_id}: '{strategy_str}'"
@@ -55,6 +62,7 @@ def run_sync():
                 contract_xl=parsed_contract_xl,
                 book_parsed=parsed_book,
                 region=parsed_region,
+                bf_parsed=parsed_bf,
             ))
             count += 1
 

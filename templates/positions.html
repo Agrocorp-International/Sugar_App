@@ -465,23 +465,22 @@
 
   <!-- Pagination -->
   {% if pagination.pages > 1 %}
-  {% set qs %}{% if date_filter %}&date_filter={{ date_filter }}{% endif %}{% if contract_filter %}&contract_filter={{ contract_filter }}{% endif %}{% if price_filter %}&price_filter={{ price_filter }}{% endif %}{% if book_filter %}&book_filter={{ book_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if contract_xl_filter %}&contract_xl_filter={{ contract_xl_filter }}{% endif %}{% if instrument_filter %}&instrument_filter={{ instrument_filter }}{% endif %}{% if spread_filter %}&spread_filter={{ spread_filter }}{% endif %}{% if neon_untagged %}&neon_untagged=1{% endif %}{% endset %}
   <nav class="mt-3">
     <ul class="pagination pagination-sm justify-content-center">
       <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-        <a class="page-link" href="?page={{ pagination.prev_num }}{{ qs }}">Previous</a>
+        <a class="page-link" href="{{ page_url(pagination.prev_num) if pagination.has_prev else '#' }}">Previous</a>
       </li>
       {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
         {% if p %}
           <li class="page-item {% if p == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}{{ qs }}">{{ p }}</a>
+            <a class="page-link" href="{{ page_url(p) }}">{{ p }}</a>
           </li>
         {% else %}
           <li class="page-item disabled"><span class="page-link">…</span></li>
         {% endif %}
       {% endfor %}
       <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-        <a class="page-link" href="?page={{ pagination.next_num }}{{ qs }}">Next</a>
+        <a class="page-link" href="{{ page_url(pagination.next_num) if pagination.has_next else '#' }}">Next</a>
       </li>
     </ul>
   </nav>
@@ -490,8 +489,13 @@
 {% else %}
   <div class="text-center text-muted py-5">
     <i class="bi bi-inbox fs-1"></i>
-    <p class="mt-2">No trade positions yet. Click <strong>Sync Now</strong> on the dashboard to pull data from Salesforce.</p>
-    <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+    {% if active_count > 0 %}
+      <p class="mt-2">No positions match these filters.</p>
+      <a href="{{ url_for('positions.index') }}" class="btn btn-outline-secondary btn-sm">Clear Filters</a>
+    {% else %}
+      <p class="mt-2">No trade positions yet. Click <strong>Sync Now</strong> on the dashboard to pull data from Salesforce.</p>
+      <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+    {% endif %}
   </div>
 {% endif %}
 

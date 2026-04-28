@@ -4,6 +4,7 @@ from sqlalchemy import cast, Date, or_
 from sqlalchemy.orm.attributes import flag_modified
 from models.db import db, TradePosition, MarketPrice
 from services.request_cache import get_all_market_prices
+from urllib.parse import urlencode
 
 
 def _multi_arg(name, args=None):
@@ -211,6 +212,12 @@ def index():
     trade_id_filter    = _multi_arg("trade_id_filter")
     neon_untagged      = request.args.get("neon_untagged") == "1"
     query = _build_positions_query(request.args)
+
+    def page_url(page_num):
+        params = request.args.to_dict(flat=False)
+        params["page"] = [page_num]
+        return "?" + urlencode(params, doseq=True)
+
     # Compute total PNL across all filtered rows (for display above table)
     all_filtered = query.all()
     warning_groups = get_warning_groups()
@@ -285,7 +292,8 @@ def index():
                            invalid_strategy_count=invalid_strategy_count,
                            warning_groups=warning_groups,
                            neon_untagged=neon_untagged,
-                           price_source=price_source)
+                           price_source=price_source,
+                           page_url=page_url)
 
 
 @positions_bp.route("/positions/api/filtered-ids")
@@ -316,6 +324,18 @@ def _validate_strategy_component(value):
     if '-' in v:
         raise ValueError(f"Strategy component cannot contain a hyphen: '{v}'")
     return v
+
+
+def _strategy_bf_component(pos):
+    """Return the non-editable BF=... Strategy__c component for a position."""
+    if pos.bf_parsed is not None:
+        return f"BF={pos.bf_parsed:.2f}"
+    parts = ((pos.data or {}).get("Strategy__c") or "").split("-", 4)
+    if len(parts) == 5:
+        bf_component = parts[4].strip()
+        if bf_component.startswith("BF="):
+            return bf_component
+    return "BF=0.00"
 
 
 @positions_bp.route("/positions/api/update", methods=["POST"])
@@ -366,16 +386,18 @@ def api_update():
             else:
                 return jsonify({"error": f"Unknown field: {field}"}), 400
 
-        # Reconstruct Strategy__c from the 4 parsed columns.
+        # Reconstruct Strategy__c from the editable parsed columns plus the
+        # non-editable brokerage fee component.
         # Happens on every save (including local-only) before the commit.
         # Track which sf_ids had book_parsed changed (for Book__c mapping).
         book_touched_ids = {c["sf_id"] for c in changes if c.get("field") == "book_parsed"}
         for sf_id, pos in strategy_touched_pos.items():
-            new_strategy = "{}-{}-{}-{}".format(
+            new_strategy = "{}-{}-{}-{}-{}".format(
                 pos.instrument or '',
                 pos.spread or '',
                 pos.contract_xl or '',
                 pos.book_parsed or '',
+                _strategy_bf_component(pos),
             )
             new_data = dict(pos.data)
             new_data['Strategy__c'] = new_strategy

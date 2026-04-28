@@ -9,12 +9,20 @@ class CottonTradePosition(db.Model):
     name = db.Column(db.String(255))
     data = db.Column(db.JSON)  # Raw Salesforce record
     last_synced_at = db.Column(db.DateTime, default=datetime.utcnow)
-    # 5-part Strategy__c parse: Instrument-Spread-ContractXL-Book-Region
+    # 6-part Strategy__c parse: Instrument-Spread-ContractXL-Book-Region-BF=fee
+    # Legacy 5-part rows may have bf_parsed=None until edited or re-synced.
     instrument  = db.Column(db.String(100), nullable=True)
     spread      = db.Column(db.String(100), nullable=True)
     contract_xl = db.Column(db.String(100), nullable=True)
     book_parsed = db.Column(db.String(100), nullable=True)
     region      = db.Column(db.String(100), nullable=True)  # cotton-only 5th part
+    bf_parsed   = db.Column(db.Float, nullable=True)         # Strategy__c part [5] BF=xxx value
+
+    @property
+    def commission(self):
+        if self.bf_parsed is not None:
+            return -self.bf_parsed
+        return float((self.data or {}).get('Broker_Commission__c') or 0)
 
     def __repr__(self):
         return f"<CottonTradePosition {self.sf_id} {self.name}>"
