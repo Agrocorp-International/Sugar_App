@@ -213,6 +213,7 @@
     <tbody>
       {% for wc in expired_contracts %}
         {% set mp = price_map.get(wc.contract) %}
+        {% set is_option = wc.contract|length > 5 %}
         <tr class="text-muted">
           <td class="fw-semibold">
             {{ wc.contract|format_cotton_contract }}
@@ -221,21 +222,21 @@
             {% endif %}
           </td>
           <td>
-            {% if wc.contract|length <= 5 %}
+            {% if not is_option %}
               <span class="badge bg-primary">Futures</span>
             {% else %}
               <span class="badge bg-warning text-dark">Options</span>
             {% endif %}
           </td>
-          <td class="text-end">
-            {% if mp %}{% if mp.settlement is not none %}{{ "%.3f"|format(mp.settlement) if wc.contract|length > 5 else "%.2f"|format(mp.settlement) }}{% else %}—{% endif %}{% else %}—{% endif %}
+          <td class="text-end expired-price-cell" data-id="{{ wc.id }}" data-field="settlement" style="cursor:pointer; min-width:70px;">
+            <span class="expired-price-display">{% if mp and mp.settlement is not none %}{{ "%.3f"|format(mp.settlement) if is_option else "%.2f"|format(mp.settlement) }}{% else %}—{% endif %}</span>
           </td>
-          {% set eff_delta = mp.delta if (mp and mp.delta is not none) else (1.0 if wc.contract|length <= 5 else none) %}
-          <td class="text-end">
-            {% if eff_delta is not none %}{{ "%+.2f"|format(eff_delta) }}{% else %}—{% endif %}
+          {% set eff_delta = mp.delta if (mp and mp.delta is not none) else (1.0 if not is_option else none) %}
+          <td class="text-end expired-price-cell" data-id="{{ wc.id }}" data-field="delta" style="cursor:pointer; min-width:70px;">
+            <span class="expired-price-display">{% if eff_delta is not none %}{{ "%+.2f"|format(eff_delta) }}{% else %}—{% endif %}</span>
           </td>
-          <td class="text-end">
-            {% if mp and mp.iv is not none %}{{ "%.1f"|format(mp.iv * 100) }}%{% else %}—{% endif %}
+          <td class="text-end expired-price-cell" data-id="{{ wc.id }}" data-field="iv" style="cursor:pointer; min-width:70px;">
+            <span class="expired-price-display">{% if mp and mp.iv is not none %}{{ "%.1f"|format(mp.iv * 100) }}%{% else %}—{% endif %}</span>
           </td>
           <td>
             {% set exp = expiry_map.get(wc.contract) %}
@@ -329,6 +330,63 @@
         if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
         if (e.key === 'Escape') {
           td.innerHTML = `<span class="sett2-display">${display.innerHTML}</span>`;
+        }
+      });
+    });
+  });
+
+  // Inline editing for expired Sett-1 / Delta-1 / IV-1 (one-off backfill).
+  // IV is stored as a fraction but displayed and entered as a percent.
+  document.querySelectorAll('.expired-price-cell').forEach(td => {
+    td.addEventListener('click', function () {
+      if (td.querySelector('input')) return;
+      const display = td.querySelector('.expired-price-display');
+      const field = td.dataset.field;
+      const raw = display.textContent.trim().replace(/[^0-9.\-+]/g, '');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = field === 'iv' ? '0.1' : (field === 'delta' ? '0.01' : '0.001');
+      input.value = (raw === '' || raw === '—') ? '' : raw;
+      input.className = 'form-control form-control-sm text-end p-0 px-1';
+      input.style.width = '80px';
+      td.replaceChildren(input);
+      input.focus();
+      input.select();
+
+      function save() {
+        const id = td.dataset.id;
+        const rawVal = input.value.trim();
+        let val = rawVal === '' ? null : parseFloat(rawVal);
+        if (val !== null && field === 'iv') val = val / 100;
+        const payload = {};
+        payload[field] = val;
+        fetch('{{ url_for("cotton_prices.contracts_update_expired_price", id=0) }}'.slice(0, -1) + id, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        })
+        .then(r => r.json())
+        .then(data => {
+          const v = data[field];
+          let formatted;
+          if (v === null || v === undefined) {
+            formatted = '<span class="text-muted">—</span>';
+          } else if (field === 'iv') {
+            formatted = (v * 100).toFixed(1) + '%';
+          } else if (field === 'delta') {
+            formatted = (v >= 0 ? '+' : '') + v.toFixed(2);
+          } else {
+            formatted = v.toFixed(3);
+          }
+          td.innerHTML = `<span class="expired-price-display">${formatted}</span>`;
+        });
+      }
+
+      input.addEventListener('blur', save);
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') {
+          td.innerHTML = `<span class="expired-price-display">${display.innerHTML}</span>`;
         }
       });
     });
