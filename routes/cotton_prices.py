@@ -97,10 +97,10 @@ def index():
         else:
             expiry_map[c] = CT_FUTURES_EXPIRY_MAP.get(c) or compute_ct_futures_expiry(c)
 
-    # Auto-expire contracts whose expiry date has passed.
-    # For options, also zero Sett-1 / Delta-1 / IV-1 once on the active->expired
-    # transition (the contract no longer trades). Don't re-zero on later page
-    # loads so manual price entry on the Expired table can persist.
+    # Auto-expire contracts whose expiry date has passed. For options, force
+    # Sett-1 / Delta-1 / IV-1 to zero (the contract no longer trades) — and
+    # create a zero-priced MarketPrice row if one doesn't exist yet, so options
+    # added to the watchlist after expiry still render 0 instead of "—".
     today = datetime.utcnow().date()
     dirty = False
     for wc in watched:
@@ -110,12 +110,22 @@ def index():
         if not wc.expired:
             wc.expired = True
             dirty = True
-            if _OPTION_RE.match(wc.contract):
-                mp = price_map.get(wc.contract)
-                if mp and (mp.settlement or mp.delta or mp.iv):
-                    mp.settlement = 0.0
-                    mp.delta = 0.0
-                    mp.iv = 0.0
+        if _OPTION_RE.match(wc.contract):
+            mp = price_map.get(wc.contract)
+            if mp is None:
+                mp = CottonMarketPrice(
+                    contract=wc.contract,
+                    settlement=0.0, delta=0.0, iv=0.0,
+                    fetched_at=datetime.utcnow(),
+                )
+                db.session.add(mp)
+                price_map[wc.contract] = mp
+                dirty = True
+            elif mp.settlement != 0.0 or mp.delta != 0.0 or mp.iv != 0.0:
+                mp.settlement = 0.0
+                mp.delta = 0.0
+                mp.iv = 0.0
+                dirty = True
     if dirty:
         db.session.commit()
 
@@ -496,42 +506,6 @@ def contracts_delete(id):
     db.session.delete(wc)
     db.session.commit()
     return redirect(url_for("cotton_prices.index"))
-
-
-@cotton_prices_bp.route("/prices/contracts/update_expired_price/<int:id>", methods=["POST"])
-def contracts_update_expired_price(id):
-    """Manual entry of Sett-1 / Delta-1 / IV-1 for expired contracts that were
-    never priced (e.g. added to the watchlist after expiry). Inline-edit hook
-    on the Expired Contracts table; intended as a one-off backfill path."""
-    wc = CottonWatchedContract.query.get_or_404(id)
-    data = request.get_json() or {}
-
-    def _parse(v):
-        if v is None or str(v).strip() == "":
-            return None
-        try:
-            return float(v)
-        except (ValueError, TypeError):
-            return None
-
-    mp = CottonMarketPrice.query.filter_by(contract=wc.contract).first()
-    if mp is None:
-        mp = CottonMarketPrice(contract=wc.contract, fetched_at=datetime.utcnow())
-        db.session.add(mp)
-
-    if "settlement" in data:
-        mp.settlement = _parse(data["settlement"])
-    if "delta" in data:
-        mp.delta = _parse(data["delta"])
-    if "iv" in data:
-        mp.iv = _parse(data["iv"])
-    db.session.commit()
-    return jsonify({
-        "ok": True,
-        "settlement": mp.settlement,
-        "delta": mp.delta,
-        "iv": mp.iv,
-    })
 
 
 @cotton_prices_bp.route("/prices/contracts/update_sett2/<int:id>", methods=["POST"])
