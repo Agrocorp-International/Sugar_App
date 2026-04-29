@@ -5,6 +5,57 @@ from models.db import db, PnlSnapshot, TradePosition
 from services.pnl_summary import compute_pnl_summary
 
 
+SNAPSHOT_DETAIL_FIELDS = [
+    "alpha_m2m",
+    "alpha_pnl",
+    "whites_physical_m2m",
+    "whites_futures_m2m",
+    "raws_physical_m2m",
+    "raws_futures_m2m",
+    "ffa_m2m",
+]
+
+SNAPSHOT_CALCULATED_FIELDS = [
+    "net_alpha_pnl",
+    "whites_pnl",
+    "net_raws_pnl",
+    "total_pnl",
+]
+
+
+def _to_number_or_none(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_sum(*values):
+    numbers = [_to_number_or_none(v) for v in values]
+    non_none = [v for v in numbers if v is not None]
+    if not non_none:
+        return None
+    return sum(non_none)
+
+
+def recalculate_snapshot_totals(data):
+    """Return snapshot data with subtotal and grand-total fields derived."""
+    updated = dict(data or {})
+    net_alpha = _safe_sum(updated.get("alpha_m2m"), updated.get("alpha_pnl"))
+    whites_pnl = _safe_sum(updated.get("whites_physical_m2m"), updated.get("whites_futures_m2m"))
+    net_raws = _safe_sum(updated.get("raws_physical_m2m"), updated.get("raws_futures_m2m"), updated.get("ffa_m2m"))
+    total_pnl = _safe_sum(net_alpha, whites_pnl, net_raws)
+    updated.update({
+        "net_alpha_pnl": net_alpha,
+        "whites_pnl": whites_pnl,
+        "net_raws_pnl": net_raws,
+        "total_pnl": total_pnl,
+    })
+    return updated
+
+
 def create_snapshot(slot: str, source: str = "manual", scheduled_for: datetime | None = None) -> PnlSnapshot:
     """Compute a fresh PnL summary, persist it for ``slot``, return the row.
 

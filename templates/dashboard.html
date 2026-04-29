@@ -463,9 +463,19 @@
     .snap-table td { padding: 5px 10px; border: 1px solid #000; background: #FCE4D6; text-align: center; white-space: nowrap; }
     .snap-table td:first-child { background: #fff; text-align: left; }
     .snap-table .snap-total td { font-weight: bold; background: #ffff00; }
-    .snap-table .snap-total td:first-child { background: #ffff00; }
-    .snap-table tbody tr:hover td { background: rgba(0,0,0,0.04); }
-    .attr-info-btn { background: transparent; border: 0; padding: 0; margin-left: 4px; color: #6c757d; line-height: 1; vertical-align: middle; cursor: help; }
+  .snap-table .snap-total td:first-child { background: #ffff00; }
+  .snap-table tbody tr:hover td { background: rgba(0,0,0,0.04); }
+  #snapEditModal input[readonly] {
+    background: #e7f1ff;
+    border-color: #9ec5fe;
+    color: #0a3678;
+    font-weight: 600;
+  }
+  .snap-calculated-note {
+    color: #0a3678;
+    font-size: 0.78rem;
+  }
+  .attr-info-btn { background: transparent; border: 0; padding: 0; margin-left: 4px; color: #6c757d; line-height: 1; vertical-align: middle; cursor: help; }
     .attr-info-btn:hover, .attr-info-btn:focus { color: #111; outline: none; }
     .popover { max-width: 320px; }
   </style>
@@ -958,20 +968,21 @@ document.querySelectorAll('form.dash-snap-sched').forEach(function(form) {
             <input type="datetime-local" class="form-control form-control-sm" id="snapEdit_snapshotted_at">
           </div>
           <div class="col-12"><hr class="my-1"></div>
+          <div class="col-12 snap-calculated-note">Blue fields are calculated automatically and cannot be edited.</div>
           {% set _snap_fields = [
-            ('alpha_m2m',           'Alpha M2M'),
-            ('alpha_pnl',           'Alpha PNL'),
-            ('net_alpha_pnl',       'Net Total Alpha PNL'),
-            ('whites_physical_m2m', 'White Physical M2M'),
-            ('whites_futures_m2m',  'White Futures M2M'),
-            ('whites_pnl',          'Whites PNL'),
-            ('raws_physical_m2m',   'Raws Physical M2M'),
-            ('raws_futures_m2m',    'Raws Futures M2M'),
-            ('ffa_m2m',             'FFA M2M'),
-            ('net_raws_pnl',        'Net Raws PNL'),
-            ('total_pnl',           'Total PNL'),
+            ('alpha_m2m',           'Alpha M2M', false),
+            ('alpha_pnl',           'Alpha PNL', false),
+            ('net_alpha_pnl',       'Net Total Alpha PNL', true),
+            ('whites_physical_m2m', 'White Physical M2M', false),
+            ('whites_futures_m2m',  'White Futures M2M', false),
+            ('whites_pnl',          'Whites PNL', true),
+            ('raws_physical_m2m',   'Raws Physical M2M', false),
+            ('raws_futures_m2m',    'Raws Futures M2M', false),
+            ('ffa_m2m',             'FFA M2M', false),
+            ('net_raws_pnl',        'Net Raws PNL', true),
+            ('total_pnl',           'Total PNL', true),
           ] %}
-          {% for key, label in _snap_fields %}
+          {% for key, label, calculated in _snap_fields %}
           <div class="col-12">
             <label for="snapEdit_{{ key }}" class="form-label small mb-1">{{ label }}</label>
             <input type="number" step="any" class="form-control form-control-sm"
@@ -989,18 +1000,56 @@ document.querySelectorAll('form.dash-snap-sched').forEach(function(form) {
 </div>
 
 <script>
+const snapAllFields = ['alpha_m2m','alpha_pnl','net_alpha_pnl',
+  'whites_physical_m2m','whites_futures_m2m','whites_pnl',
+  'raws_physical_m2m','raws_futures_m2m','ffa_m2m','net_raws_pnl','total_pnl'];
+const snapDetailFields = ['alpha_m2m','alpha_pnl',
+  'whites_physical_m2m','whites_futures_m2m',
+  'raws_physical_m2m','raws_futures_m2m','ffa_m2m'];
+const snapCalculatedFields = ['net_alpha_pnl','whites_pnl','net_raws_pnl','total_pnl'];
+
+function snapNumberValue(field) {
+  const raw = document.getElementById('snapEdit_' + field)?.value;
+  if (raw === '' || raw === null || raw === undefined) return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+}
+
+function snapSafeSum(fields) {
+  const nums = fields.map(snapNumberValue).filter(v => v !== null);
+  if (!nums.length) return '';
+  return nums.reduce((sum, v) => sum + v, 0);
+}
+
+function setSnapCalculatedValue(field, value) {
+  const input = document.getElementById('snapEdit_' + field);
+  if (input) input.value = value === '' ? '' : String(value);
+}
+
+function recalcSnapEditTotals() {
+  const netAlpha = snapSafeSum(['alpha_m2m', 'alpha_pnl']);
+  setSnapCalculatedValue('net_alpha_pnl', netAlpha);
+  const whites = snapSafeSum(['whites_physical_m2m', 'whites_futures_m2m']);
+  setSnapCalculatedValue('whites_pnl', whites);
+  const netRaws = snapSafeSum(['raws_physical_m2m', 'raws_futures_m2m', 'ffa_m2m']);
+  setSnapCalculatedValue('net_raws_pnl', netRaws);
+  const totalParts = [];
+  if (netAlpha !== '') totalParts.push('net_alpha_pnl');
+  if (whites !== '') totalParts.push('whites_pnl');
+  if (netRaws !== '') totalParts.push('net_raws_pnl');
+  setSnapCalculatedValue('total_pnl', totalParts.length ? snapSafeSum(totalParts) : '');
+}
+
 function openSnapEdit(slot) {
   document.getElementById('snapEditSlot').value = slot;
   document.getElementById('snapEditModalLabel').textContent =
     slot.charAt(0).toUpperCase() + slot.slice(1) + ' Snapshot \u2014 Edit Values';
   const hdr = document.querySelector(`[data-snap-slot="${slot}"]`);
-  const fields = ['alpha_m2m','alpha_pnl','net_alpha_pnl',
-    'whites_physical_m2m','whites_futures_m2m','whites_pnl',
-    'raws_physical_m2m','raws_futures_m2m','ffa_m2m','net_raws_pnl','total_pnl'];
-  fields.forEach(f => {
+  snapAllFields.forEach(f => {
     const inp = document.getElementById('snapEdit_' + f);
     if (inp && hdr) inp.value = hdr.dataset[f] ?? '';
   });
+  recalcSnapEditTotals();
   // as_of_date — plain date string
   const aodInp = document.getElementById('snapEdit_as_of_date');
   if (aodInp && hdr) aodInp.value = hdr.dataset['as_of_date'] ?? '';
@@ -1016,11 +1065,9 @@ function openSnapEdit(slot) {
 
 async function saveSnapEdit() {
   const slot = document.getElementById('snapEditSlot').value;
-  const fields = ['alpha_m2m','alpha_pnl','net_alpha_pnl',
-    'whites_physical_m2m','whites_futures_m2m','whites_pnl',
-    'raws_physical_m2m','raws_futures_m2m','ffa_m2m','net_raws_pnl','total_pnl'];
+  recalcSnapEditTotals();
   const body = {};
-  for (const f of fields) {
+  for (const f of snapDetailFields) {
     const v = document.getElementById('snapEdit_' + f)?.value;
     if (v !== '' && v !== null && v !== undefined) body[f] = parseFloat(v);
   }
@@ -1040,6 +1087,17 @@ async function saveSnapEdit() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  snapCalculatedFields.forEach(function(field) {
+    const input = document.getElementById('snapEdit_' + field);
+    if (input) {
+      input.readOnly = true;
+      input.tabIndex = -1;
+    }
+  });
+  snapDetailFields.forEach(function(field) {
+    const input = document.getElementById('snapEdit_' + field);
+    if (input) input.addEventListener('input', recalcSnapEditTotals);
+  });
   document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
     new bootstrap.Popover(el, { sanitize: false });
   });

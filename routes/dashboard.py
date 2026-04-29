@@ -10,7 +10,7 @@ from services.exchange_calendar import RAW_HOLIDAYS
 from services.pnl_summary import compute_pnl_summary, compute_exposure, get_reference_snapshots
 from services.physical_pnl import compute_all_pnl_totals
 from services.price_source import get_price_source
-from services.snapshots import create_snapshot
+from services.snapshots import SNAPSHOT_DETAIL_FIELDS, recalculate_snapshot_totals, create_snapshot
 from services.schedule import is_due
 from services.var_summary import compute_var_summary
 from services.pnl_attribution import compute_attribution
@@ -455,15 +455,9 @@ def edit_snapshot(slot):
     if snap is None:
         return jsonify({"error": "No snapshot exists for this slot"}), 404
     body = request.get_json(silent=True) or {}
-    FIELDS = [
-        "alpha_m2m", "alpha_pnl", "net_alpha_pnl",
-        "whites_physical_m2m", "whites_futures_m2m", "whites_pnl",
-        "raws_physical_m2m", "raws_futures_m2m", "ffa_m2m",
-        "net_raws_pnl", "total_pnl",
-    ]
     updates = {}
     errors = []
-    for f in FIELDS:
+    for f in SNAPSHOT_DETAIL_FIELDS:
         if f in body:
             try:
                 updates[f] = float(body[f])
@@ -492,7 +486,7 @@ def edit_snapshot(slot):
     if not updates and new_snapshotted_at is None:
         return jsonify({"error": "No fields provided"}), 400
 
-    snap.data = {**snap.data, **updates}
+    snap.data = recalculate_snapshot_totals({**snap.data, **updates})
     if new_snapshotted_at is not None:
         snap.snapshotted_at = new_snapshotted_at
     snap.source = "edited"
