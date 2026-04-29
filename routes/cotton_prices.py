@@ -16,7 +16,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from models.db import db, RefreshLog
 from models.cotton import CottonMarketPrice, CottonWatchedContract, CottonTradePosition
-from routes.cotton_info import CT_FUTURES_EXPIRY_MAP, PARSED_CT_OPTIONS
+from routes.cotton_info import (
+    CT_FUTURES_EXPIRY_MAP,
+    PARSED_CT_OPTIONS,
+    compute_ct_futures_expiry,
+    compute_ct_option_expiry,
+)
 from services.exchange_calendar import HOLIDAY_DATES
 
 cotton_prices_bp = Blueprint("cotton_prices", __name__)
@@ -87,9 +92,10 @@ def index():
         c = wc.contract
         m = _OPTION_RE.match(c)
         if m:
-            expiry_map[c] = OPTIONS_BASE_EXPIRY_MAP.get(m.group(1))
+            base = m.group(1)
+            expiry_map[c] = OPTIONS_BASE_EXPIRY_MAP.get(base) or compute_ct_option_expiry(base)
         else:
-            expiry_map[c] = CT_FUTURES_EXPIRY_MAP.get(c)
+            expiry_map[c] = CT_FUTURES_EXPIRY_MAP.get(c) or compute_ct_futures_expiry(c)
 
     # Auto-expire contracts whose expiry date has passed.
     # For options, also zero Sett-1 / Delta-1 / IV-1 since the contract no longer trades.

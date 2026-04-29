@@ -179,6 +179,49 @@ CT_FUTURES_EXPIRY_MAP = {
 PARSED_CT_OPTIONS = _parse_ct_options(_RAW_CT_OPTIONS, CT_FUTURES_EXPIRY_MAP)
 
 
+def compute_ct_futures_expiry(contract):
+    """LTD for a single CT futures contract code (e.g. 'CTH24' or 'CT H24'),
+    regardless of the rolling-window cache. Returns None for malformed input."""
+    c = (contract or "").replace(" ", "")
+    if len(c) != 5 or not c.startswith("CT"):
+        return None
+    code = c[2]
+    month = FUTURES_MONTH_CODES.get(code)
+    if month is None:
+        return None
+    try:
+        yy = int(c[3:5])
+    except ValueError:
+        return None
+    year = 2000 + yy
+    last_biz = last_biz_of_month(year, month, HOLIDAY_DATES)
+    return workday(last_biz, LTD_OFFSET, HOLIDAY_DATES)
+
+
+def compute_ct_option_expiry(option_contract):
+    """LTD for a single CT option contract code (e.g. 'CTK24' or 'CT K24'),
+    regardless of the rolling-window cache. Returns None for malformed input or
+    forbidden option codes (G/J/M/Q)."""
+    c = (option_contract or "").replace(" ", "")
+    if len(c) != 5 or not c.startswith("CT"):
+        return None
+    opt_code = c[2]
+    if opt_code not in CT_OPTION_TO_UNDERLYING:
+        return None
+    try:
+        yy = int(c[3:5])
+    except ValueError:
+        return None
+    year = 2000 + yy
+    if opt_code in CT_SERIAL_OPTION_MONTHS:
+        month = FUTURES_MONTH_CODES[opt_code]
+        return third_friday(year, month)
+    und_code, year_offset = CT_OPTION_TO_UNDERLYING[opt_code]
+    und_yy = (yy + year_offset) % 100
+    underlying = f"CT {und_code}{und_yy:02d}"
+    return _ct_regular_option_expiry(underlying, HOLIDAY_DATES)
+
+
 def _assert_regression():
     """Loud-fail at module import if any pinned cotton expiry has drifted.
     See routes/_cotton_info_regression.py for the anchors."""
