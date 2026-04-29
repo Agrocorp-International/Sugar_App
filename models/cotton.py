@@ -136,3 +136,18 @@ class CottonSimStack(db.Model):
 
     def __repr__(self):
         return f"<CottonSimStack {self.label}>"
+
+
+class CottonIndexRow(db.Model):
+    __tablename__ = "cotton_index_rows"
+
+    id         = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    table_name = db.Column(db.String(50), nullable=False, index=True)
+    row_index  = db.Column(db.Integer, nullable=False)
+    data       = db.Column(db.JSON, nullable=False)
+    source     = db.Column(db.String(20), nullable=False, default="seed")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CottonIndexRow {self.table_name} #{self.row_index}>"

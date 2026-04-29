@@ -24,6 +24,7 @@ from routes.cotton_positions import cotton_positions_bp
 from routes.cotton_prices import cotton_prices_bp
 from routes.cotton_info import cotton_info_bp
 from routes.cotton_options import cotton_options_bp
+from routes.cotton_index import cotton_index_bp
 from routes.neon_sync import neon_sync_bp
 
 
@@ -61,6 +62,7 @@ def create_app():
     app.register_blueprint(cotton_prices_bp,    url_prefix="/cotton")
     app.register_blueprint(cotton_info_bp,      url_prefix="/cotton")
     app.register_blueprint(cotton_options_bp,   url_prefix="/cotton")
+    app.register_blueprint(cotton_index_bp,     url_prefix="/cotton")
 
     @app.route("/")
     def root():

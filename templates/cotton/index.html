@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Index - Cotton Trading{% endblock %}
+
+{% block content %}
+{% macro render_index_table(title, headers, rows, header_class, calculated_cols=(), editable=false) %}
+  <div class="card d-inline-block align-top">
+    <div class="card-header fw-semibold py-1 px-2">{{ title }}</div>
+    <div class="card-body p-0">
+      {% if headers and rows %}
+        <table class="table table-sm table-hover mb-0 w-auto">
+          <thead class="{{ header_class }}">
+            <tr>
+              {% for h in headers %}
+                <th class="text-center{% if h in calculated_cols %} index-calc-header{% endif %}"
+                    {% if h in calculated_cols %}title="Calculated column"{% endif %}>
+                  {{ h }}{% if h in calculated_cols %} <i class="bi bi-calculator small text-muted"></i>{% endif %}
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr>
+                {% for h in headers %}
+                  {% set v = r.data.get(h) %}
+                  {% set is_calc = h in calculated_cols %}
+                  {% set is_edit = editable and not is_calc %}
+                  <td class="text-nowrap text-center{% if is_calc %} index-calc{% elif is_edit %} index-edit{% endif %}"
+                      data-row-id="{{ r.id }}" data-col="{{ h }}"
+                      {% if is_edit %}title="Click to edit"{% endif %}>
+                    <span class="cell-value">{% if v is none or (v is string and not v) %}<span class="text-muted">—</span>{% else %}{{ v }}{% endif %}</span>
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="text-muted small p-3">No rows. Click <strong>Seed from Disk</strong> or <strong>Override from Excel</strong>.</div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+<div class="d-flex align-items-start mb-3">
+  <div>
+    <h4 class="mb-0">Index</h4>
+    <p class="text-muted small mt-1 mb-0">Cotton basis, colour premium, and staple premium reference tables.</p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <button class="btn btn-outline-secondary btn-sm" onclick="seedFromDisk()">
+      <i class="bi bi-arrow-repeat me-1"></i>Seed from Disk
+    </button>
+    <button class="btn btn-outline-warning btn-sm" onclick="document.getElementById('indexUpload').click()">
+      <i class="bi bi-upload me-1"></i>Override from Excel
+    </button>
+    <input type="file" id="indexUpload" accept=".xlsm,.xlsx" style="display:none" onchange="uploadExcel(this)">
+  </div>
+</div>
+
+<style>
+  .index-calc        { background-color: #fff3cd; }
+  .index-calc-header { background-color: #ffe69c; }
+  .index-edit        { background-color: #fce4d6; cursor: pointer; }
+  .index-edit:hover  { background-color: #fad0b3; }
+  .index-edit input  { background-color: #fff; }
+</style>
+
+<div class="d-flex flex-wrap gap-4 align-items-start">
+  {{ render_index_table("Index Basis",     basis_headers,  basis_rows,  "table-primary", basis_calculated_cols, editable=true) }}
+  {{ render_index_table("Colour Premiums", colour_headers, colour_rows, "table-warning",                          editable=true) }}
+  {{ render_index_table("Staple Premiums", staple_headers, staple_rows, "table-success",                          editable=true) }}
+</div>
+
+<p class="text-muted small mt-4 mb-0">
+  <i class="bi bi-info-circle me-1"></i>
+  Basis Quote = FOB Basis + Colour Premium + Staple Premium
+</p>
+<p class="text-muted small mb-0">
+  <i class="bi bi-calculator me-1"></i>
+  Calculated columns (highlighted): <strong>Bd</strong> = FOB Basis + 3.2 &nbsp;·&nbsp;
+  <strong>India</strong> = FOB Basis + 2.8 &nbsp;·&nbsp;
+  <strong>Staple 1 3/16</strong> = Bd + 1.6
+</p>
+
+<script>
+function seedFromDisk() {
+  if (!confirm("This will replace ALL cotton index rows from cottonm2m.xlsm on disk. Continue?")) return;
+  fetch("{{ url_for('cotton_index.api_seed') }}", {method: "POST"})
+    .then(r => r.json())
+    .then(result => {
+      if (result.ok) {
+        alert(`Seeded ${result.basis} basis + ${result.colour} colour + ${result.staple} staple rows.`);
+        location.reload();
+      } else {
+        alert("Seed failed: " + (result.error || "Unknown error"));
+      }
+    })
+    .catch(() => alert("Network error."));
+}
+
+function uploadExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm("This will replace ALL cotton index rows from the uploaded workbook. Continue?")) {
+    input.value = "";
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  fetch("{{ url_for('cotton_index.api_upload') }}", {method: "POST", body: form})
+    .then(r => r.json())
+    .then(result => {
+      if (result.ok) {
+        alert(`Loaded ${result.basis} basis + ${result.colour} colour + ${result.staple} staple rows.`);
+        location.reload();
+      } else {
+        alert("Upload failed: " + (result.error || "Unknown error"));
+        input.value = "";
+      }
+    })
+    .catch(() => {
+      alert("Network error.");
+      input.value = "";
+    });
+}
+
+// Inline edit for non-calculated Index Basis cells. Click → input;
+// Enter/blur saves, Escape cancels. Editing FOB Basis triggers an in-place
+// refresh of the row's calculated cells (Bd / India / Staple 1 3/16).
+function formatCellHTML(v) {
+  if (v === null || v === undefined || v === "") {
+    return '<span class="text-muted">—</span>';
+  }
+  return String(v);
+}
+
+document.querySelectorAll('td.index-edit').forEach(td => {
+  td.addEventListener('click', function () {
+    if (td.querySelector('input')) return;
+    const display = td.querySelector('.cell-value');
+    const originalHTML = display.innerHTML;
+    const originalText = display.textContent.trim();
+    const seedValue = (originalText === '—') ? '' : originalText;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = seedValue;
+    input.className = 'form-control form-control-sm text-center p-0 px-1';
+    input.style.minWidth = '70px';
+    input.style.width = '100%';
+    td.replaceChildren(input);
+    input.focus();
+    input.select();
+
+    let cancelled = false;
+
+    function restore() {
+      td.innerHTML = `<span class="cell-value">${originalHTML}</span>`;
+    }
+
+    function save() {
+      if (cancelled) return;
+      const newValue = input.value;
+      if (newValue.trim() === seedValue.trim()) { restore(); return; }
+      const rowId = td.dataset.rowId;
+      const column = td.dataset.col;
+      fetch("{{ url_for('cotton_index.api_update_row', row_id=0) }}".slice(0, -1) + rowId, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({column, value: newValue})
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { alert('Save failed: ' + data.error); restore(); return; }
+        td.innerHTML = `<span class="cell-value">${formatCellHTML(data.value)}</span>`;
+        if (data.calculated) {
+          const tr = td.closest('tr');
+          for (const [col, val] of Object.entries(data.calculated)) {
+            const cell = tr.querySelector(`td[data-col="${CSS.escape(col)}"]`);
+            if (cell) {
+              const span = cell.querySelector('.cell-value');
+              if (span) span.innerHTML = formatCellHTML(val);
+            }
+          }
+        }
+      })
+      .catch(() => { alert('Network error.'); restore(); });
+    }
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { cancelled = true; restore(); }
+    });
+  });
+});
+</script>
+{% endblock %}

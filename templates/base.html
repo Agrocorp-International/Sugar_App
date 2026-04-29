@@ -377,7 +377,7 @@
             </ul>
           </li>
           {% elif _section == 'cotton' %}
-          {% set cotton_others_eps = ['cotton_info.index'] %}
+          {% set cotton_others_eps = ['cotton_info.index', 'cotton_index.index'] %}
           <li class="nav-item">
             <a class="nav-link {% if ep == 'cotton_dashboard.index' %}active{% endif %}" href="{{ url_for('cotton_dashboard.index') }}">
               <i class="bi bi-speedometer2 me-1"></i>Dashboard
@@ -408,6 +408,11 @@
               <li>
                 <a class="dropdown-item {% if ep == 'cotton_info.index' %}active{% endif %}" href="{{ url_for('cotton_info.index') }}">
                   <i class="bi bi-calendar-event me-2"></i>Info
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item {% if ep == 'cotton_index.index' %}active{% endif %}" href="{{ url_for('cotton_index.index') }}">
+                  <i class="bi bi-list-columns me-2"></i>Index
                 </a>
               </li>
             </ul>
