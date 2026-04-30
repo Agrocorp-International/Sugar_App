@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
 from routes.strategy_warnings import get_warning_groups
-from sqlalchemy import cast, Date, or_
+from sqlalchemy import or_
 from sqlalchemy.orm.attributes import flag_modified
 from models.db import db, TradePosition, MarketPrice
 from services.request_cache import get_all_market_prices
@@ -32,12 +32,15 @@ def _build_positions_query(args):
     status_filter      = _multi_arg("status_filter", args)
     trade_id_filter    = _multi_arg("trade_id_filter", args)
     neon_untagged      = args.get("neon_untagged") == "1"
+    # Text ORDER BY / equality on the ISO 'YYYY-MM-DD' string sorts identically
+    # to date ordering and matches the IMMUTABLE expression index
+    # ix_sugar_trade_positions_trade_date_desc.
     query = TradePosition.query.order_by(
-        cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
+        TradePosition.data["Trade_Date__c"].as_string().desc()
     )
     if date_filter:
         query = query.filter(
-            cast(TradePosition.data["Trade_Date__c"].as_string(), Date) == date_filter
+            TradePosition.data["Trade_Date__c"].as_string() == date_filter
         )
     if contract_filter:
         query = query.filter(
@@ -144,7 +147,7 @@ def compute_maps(positions, source='sett1'):
     from services.price_source import resolve_price, resolve_delta
     market = {mp.contract: mp for mp in get_all_market_prices()}
     _latest = TradePosition.query.order_by(
-        cast(TradePosition.data["Trade_Date__c"].as_string(), Date).desc()
+        TradePosition.data["Trade_Date__c"].as_string().desc()
     ).first()
     latest_date = _latest.data.get("Trade_Date__c") if _latest else None
     pnl_map = {}

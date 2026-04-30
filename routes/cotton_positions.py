@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
-from sqlalchemy import cast, Date, or_
+from sqlalchemy import or_
 from models.db import db
 from models.cotton import CottonTradePosition
 from services.request_cache import get_all_cotton_market_prices
@@ -42,7 +42,7 @@ def compute_maps(positions, source='sett1'):
     from services.price_source import resolve_price, resolve_delta
     market = {mp.contract: mp for mp in get_all_cotton_market_prices()}
     _latest = CottonTradePosition.query.order_by(
-        cast(CottonTradePosition.data["Trade_Date__c"].as_string(), Date).desc()
+        CottonTradePosition.data["Trade_Date__c"].as_string().desc()
     ).first()
     latest_date = _latest.data.get("Trade_Date__c") if _latest else None
     pnl_map = {}
@@ -164,12 +164,15 @@ def index():
         params["page"] = [page_num]
         return "?" + urlencode(params, doseq=True)
 
+    # Text ORDER BY / equality on the ISO 'YYYY-MM-DD' string sorts identically
+    # to date ordering and matches the IMMUTABLE expression index
+    # ix_cotton_trade_positions_trade_date_desc.
     query = CottonTradePosition.query.order_by(
-        cast(CottonTradePosition.data["Trade_Date__c"].as_string(), Date).desc()
+        CottonTradePosition.data["Trade_Date__c"].as_string().desc()
     )
     if date_filter:
         query = query.filter(
-            cast(CottonTradePosition.data["Trade_Date__c"].as_string(), Date) == date_filter
+            CottonTradePosition.data["Trade_Date__c"].as_string() == date_filter
         )
     if contract_filter:
         query = query.filter(
