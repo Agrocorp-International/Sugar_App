@@ -87,6 +87,59 @@ def compute_maps(positions, source='sett1'):
     return pnl_map, pnl_change_map, settlement_map, settlement2_map, delta_map
 
 
+def _load_cotton_positions_filter_options():
+    """Return the 9 dropdown option lists for /cotton/positions, cached by positions_version.
+
+    Each filter is a `SELECT DISTINCT` over cotton_trade_positions; on a cold
+    cache they run sequentially and add up. They only change when cotton trade
+    positions change, so we cache on the shared positions version counter.
+    Autobump (services/cache.install_autobump) invalidates this cache on any
+    CottonTradePosition write.
+    """
+    from sqlalchemy import text as sa_text
+    from services.cache import get_or_compute, positions_version
+    pv = positions_version()
+    TTL = 600  # 10 min ceiling; autobump is the primary invalidator.
+
+    def _distinct_json(field):
+        return [r[0] for r in db.session.execute(sa_text(
+            f"SELECT DISTINCT data->>'{field}' FROM cotton_trade_positions "
+            f"WHERE data->>'{field}' IS NOT NULL AND data->>'{field}' != '' ORDER BY 1"
+        )).fetchall()]
+
+    def _distinct_col(col):
+        return [r[0] for r in db.session.execute(sa_text(
+            f"SELECT DISTINCT {col} FROM cotton_trade_positions "
+            f"WHERE {col} IS NOT NULL AND {col} != '' ORDER BY 1"
+        )).fetchall()]
+
+    book_options = get_or_compute(("cotton_positions_book_options", pv), TTL,
+        lambda: _distinct_json("Book__c"))
+    contract_options = get_or_compute(("cotton_positions_contract_options", pv), TTL,
+        lambda: _distinct_json("Contract__c"))
+    put_call_options = get_or_compute(("cotton_positions_put_call_options", pv), TTL,
+        lambda: _distinct_json("Put_Call_2__c"))
+    strike_options = get_or_compute(("cotton_positions_strike_options", pv), TTL,
+        lambda: [r[0] for r in db.session.execute(sa_text(
+            "SELECT DISTINCT CAST(data->>'Strike__c' AS NUMERIC) FROM cotton_trade_positions "
+            "WHERE data->>'Strike__c' IS NOT NULL AND data->>'Strike__c' != '' ORDER BY 1"
+        )).fetchall()])
+    instrument_options = get_or_compute(("cotton_positions_instrument_options", pv), TTL,
+        lambda: _distinct_col("instrument"))
+    spread_options = get_or_compute(("cotton_positions_spread_options", pv), TTL,
+        lambda: _distinct_col("spread"))
+    region_options = get_or_compute(("cotton_positions_region_options", pv), TTL,
+        lambda: _distinct_col("region"))
+    status_options = get_or_compute(("cotton_positions_status_options", pv), TTL,
+        lambda: _distinct_json("Realised__c"))
+    trade_id_options = get_or_compute(("cotton_positions_trade_id_options", pv), TTL,
+        lambda: sorted(_distinct_json("Trade_Key__c"),
+            key=lambda x: (0, int(x)) if x.lstrip('-').isdigit() else (1, x)))
+    return (book_options, contract_options, put_call_options, strike_options,
+            instrument_options, spread_options, region_options, status_options,
+            trade_id_options)
+
+
 @cotton_positions_bp.route("/positions")
 def index():
     from sqlalchemy import text as sa_text
@@ -190,20 +243,22 @@ def index():
             CottonTradePosition.data["Trade_Key__c"].as_string().in_(trade_id_filter)
         )
 
-    # Totals across filtered rows
+    # Compute pricing maps ONCE over all filtered rows. The totals block and
+    # the paginated rendering reuse these dicts (keyed by sf_id), so a second
+    # compute_maps pass over pagination.items would just be wasted work.
     all_filtered = query.all()
-    _all_pnl_map, _, _, _, _all_delta_map = compute_maps(all_filtered, price_source)
+    pnl_map, pnl_change_map, settlement_map, settlement2_map, delta_map = compute_maps(all_filtered, price_source)
     total_pnl = 0
     total_net_pnl = 0
     total_position = None
     total_spread_pos = None
     for _pos in all_filtered:
-        _pnl = _all_pnl_map.get(_pos.sf_id)
+        _pnl = pnl_map.get(_pos.sf_id)
         if _pnl is not None:
             _comm = _pos.commission
             total_pnl += _pnl
             total_net_pnl += _pnl + _comm
-        _delta = _all_delta_map.get(_pos.sf_id)
+        _delta = delta_map.get(_pos.sf_id)
         _lots = float(_pos.data.get('Long__c') or 0) + float(_pos.data.get('Short__c') or 0)
         if _delta is not None:
             total_position = (total_position or 0) + _delta * _lots
@@ -216,38 +271,9 @@ def index():
                         total_spread_pos = (total_spread_pos or 0) + _delta * _lots
 
     pagination = query.paginate(page=page, per_page=PAGE_SIZE, error_out=False)
-    pnl_map, pnl_change_map, settlement_map, settlement2_map, delta_map = compute_maps(
-        pagination.items, price_source
-    )
-
-    # Distinct option values for filter dropdowns
-    def _distinct_json(field):
-        return [r[0] for r in db.session.execute(sa_text(
-            f"SELECT DISTINCT data->>'{field}' FROM cotton_trade_positions "
-            f"WHERE data->>'{field}' IS NOT NULL AND data->>'{field}' != '' ORDER BY 1"
-        )).fetchall()]
-
-    def _distinct_col(col):
-        return [r[0] for r in db.session.execute(sa_text(
-            f"SELECT DISTINCT {col} FROM cotton_trade_positions "
-            f"WHERE {col} IS NOT NULL AND {col} != '' ORDER BY 1"
-        )).fetchall()]
-
-    book_options       = _distinct_json("Book__c")
-    contract_options   = _distinct_json("Contract__c")
-    put_call_options   = _distinct_json("Put_Call_2__c")
-    strike_options     = [r[0] for r in db.session.execute(sa_text(
-        "SELECT DISTINCT CAST(data->>'Strike__c' AS NUMERIC) FROM cotton_trade_positions "
-        "WHERE data->>'Strike__c' IS NOT NULL AND data->>'Strike__c' != '' ORDER BY 1"
-    )).fetchall()]
-    instrument_options = _distinct_col("instrument")
-    spread_options     = _distinct_col("spread")
-    region_options     = _distinct_col("region")
-    status_options     = _distinct_json("Realised__c")
-    trade_id_options   = sorted(
-        _distinct_json("Trade_Key__c"),
-        key=lambda x: (0, int(x)) if x.lstrip('-').isdigit() else (1, x)
-    )
+    book_options, contract_options, put_call_options, strike_options, \
+        instrument_options, spread_options, region_options, status_options, \
+        trade_id_options = _load_cotton_positions_filter_options()
 
     return render_template(
         "cotton/positions.html",

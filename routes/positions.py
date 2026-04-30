@@ -193,6 +193,55 @@ def compute_maps(positions, source='sett1'):
 _SF_STATUS_MAP = {'Unrealised': 'Open', 'Realised': 'Closed'}
 
 
+def _load_positions_filter_options():
+    """Return the 8 dropdown option lists for /positions, cached by positions_version.
+
+    Each filter dropdown is a `SELECT DISTINCT` over sugar_trade_positions; on a
+    cold cache they run sequentially and add up. They only change when trade
+    positions change, so we cache on the positions version counter — autobump
+    invalidates them automatically on any TradePosition write.
+    """
+    from sqlalchemy import text as sa_text
+    from services.cache import get_or_compute, positions_version
+    pv = positions_version()
+    TTL = 600  # 10 min ceiling; autobump is the primary invalidator.
+
+    def _distinct_json(field):
+        return [r[0] for r in db.session.execute(sa_text(
+            f"SELECT DISTINCT data->>'{field}' FROM sugar_trade_positions "
+            f"WHERE data->>'{field}' IS NOT NULL AND data->>'{field}' != '' ORDER BY 1"
+        )).fetchall()]
+
+    def _distinct_col(col):
+        return [r[0] for r in db.session.execute(sa_text(
+            f"SELECT DISTINCT {col} FROM sugar_trade_positions "
+            f"WHERE {col} IS NOT NULL AND {col} != '' ORDER BY 1"
+        )).fetchall()]
+
+    book_options = get_or_compute(("positions_book_options", pv), TTL,
+        lambda: _distinct_json("Book__c"))
+    contract_options = get_or_compute(("positions_contract_options", pv), TTL,
+        lambda: _distinct_json("Contract__c"))
+    put_call_options = get_or_compute(("positions_put_call_options", pv), TTL,
+        lambda: _distinct_json("Put_Call_2__c"))
+    strike_options = get_or_compute(("positions_strike_options", pv), TTL,
+        lambda: [r[0] for r in db.session.execute(sa_text(
+            "SELECT DISTINCT CAST(data->>'Strike__c' AS NUMERIC) FROM sugar_trade_positions "
+            "WHERE data->>'Strike__c' IS NOT NULL AND data->>'Strike__c' != '' ORDER BY 1"
+        )).fetchall()])
+    instrument_options = get_or_compute(("positions_instrument_options", pv), TTL,
+        lambda: _distinct_col("instrument"))
+    spread_options = get_or_compute(("positions_spread_options", pv), TTL,
+        lambda: _distinct_col("spread"))
+    status_options = get_or_compute(("positions_status_options", pv), TTL,
+        lambda: _distinct_json("Realised__c"))
+    trade_id_options = get_or_compute(("positions_trade_id_options", pv), TTL,
+        lambda: sorted(_distinct_json("Trade_Key__c"),
+            key=lambda x: (0, int(x)) if x.lstrip('-').isdigit() else (1, x)))
+    return (book_options, contract_options, put_call_options, strike_options,
+            instrument_options, spread_options, status_options, trade_id_options)
+
+
 @positions_bp.route("/positions")
 def index():
     from sqlalchemy import text as sa_text
@@ -218,22 +267,24 @@ def index():
         params["page"] = [page_num]
         return "?" + urlencode(params, doseq=True)
 
-    # Compute total PNL across all filtered rows (for display above table)
+    # Compute pricing maps ONCE over all filtered rows. Both the totals
+    # block and the paginated rendering reuse these dicts (keyed by sf_id),
+    # so a second compute_maps pass over pagination.items is unnecessary.
     all_filtered = query.all()
     warning_groups = get_warning_groups()
     invalid_strategy_count = len(warning_groups)
-    _all_pnl_map, _, _, _, _all_delta_map = compute_maps(all_filtered, price_source)
+    pnl_map, pnl_change_map, settlement_map, settlement2_map, delta_map = compute_maps(all_filtered, price_source)
     total_pnl = 0
     total_net_pnl = 0
     total_position = None
     total_spread_pos = None
     for _pos in all_filtered:
-        _pnl = _all_pnl_map.get(_pos.sf_id)
+        _pnl = pnl_map.get(_pos.sf_id)
         if _pnl is not None:
             _comm = _pos.commission
             total_pnl += _pnl
             total_net_pnl += _pnl + _comm
-        _delta = _all_delta_map.get(_pos.sf_id)
+        _delta = delta_map.get(_pos.sf_id)
         _lots = float(_pos.data.get('Long__c') or 0) + float(_pos.data.get('Short__c') or 0)
         if _delta is not None:
             total_position = (total_position or 0) + _delta * _lots
@@ -245,34 +296,9 @@ def index():
                     if _contract_last3 != _spread[-3:]:
                         total_spread_pos = (total_spread_pos or 0) + _delta * _lots
     pagination = query.paginate(page=page, per_page=PAGE_SIZE, error_out=False)
-    pnl_map, pnl_change_map, settlement_map, settlement2_map, delta_map = compute_maps(pagination.items, price_source)
-    book_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT data->>'Book__c' FROM sugar_trade_positions WHERE data->>'Book__c' IS NOT NULL AND data->>'Book__c' != '' ORDER BY 1")
-    ).fetchall()]
-    contract_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT data->>'Contract__c' FROM sugar_trade_positions WHERE data->>'Contract__c' IS NOT NULL AND data->>'Contract__c' != '' ORDER BY 1")
-    ).fetchall()]
-    put_call_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT data->>'Put_Call_2__c' FROM sugar_trade_positions WHERE data->>'Put_Call_2__c' IS NOT NULL AND data->>'Put_Call_2__c' != '' ORDER BY 1")
-    ).fetchall()]
-    strike_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT CAST(data->>'Strike__c' AS NUMERIC) FROM sugar_trade_positions WHERE data->>'Strike__c' IS NOT NULL AND data->>'Strike__c' != '' ORDER BY 1")
-    ).fetchall()]
-    instrument_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT instrument FROM sugar_trade_positions WHERE instrument IS NOT NULL AND instrument != '' ORDER BY 1")
-    ).fetchall()]
-    spread_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT spread FROM sugar_trade_positions WHERE spread IS NOT NULL AND spread != '' ORDER BY 1")
-    ).fetchall()]
-    status_options = [r[0] for r in db.session.execute(
-        sa_text("SELECT DISTINCT data->>'Realised__c' FROM sugar_trade_positions WHERE data->>'Realised__c' IS NOT NULL AND data->>'Realised__c' != '' ORDER BY 1")
-    ).fetchall()]
-    trade_id_options = sorted(
-        [r[0] for r in db.session.execute(
-            sa_text("SELECT DISTINCT data->>'Trade_Key__c' FROM sugar_trade_positions WHERE data->>'Trade_Key__c' IS NOT NULL AND data->>'Trade_Key__c' != ''")
-        ).fetchall()],
-        key=lambda x: (0, int(x)) if x.lstrip('-').isdigit() else (1, x)
-    )
+    book_options, contract_options, put_call_options, strike_options, \
+        instrument_options, spread_options, status_options, trade_id_options = \
+        _load_positions_filter_options()
     return render_template("positions.html", pagination=pagination,
                            pnl_map=pnl_map, pnl_change_map=pnl_change_map,
                            settlement_map=settlement_map, settlement2_map=settlement2_map,

@@ -140,6 +140,10 @@ def count_fallbacks(source=DEFAULT_SOURCE, price_model=None, watched_model=None)
 
     Defaults to sugar (MarketPrice + WatchedContract); pass cotton models
     to count cotton fallbacks instead.
+
+    Cached per (source, models, prices_version) — the navbar calls this on
+    every request, but the answer only changes on price/watched-contract
+    writes (which auto-bump prices_version via services.cache.install_autobump).
     """
     if source != "live":
         return 0
@@ -147,9 +151,17 @@ def count_fallbacks(source=DEFAULT_SOURCE, price_model=None, watched_model=None)
         price_model = MarketPrice
     if watched_model is None:
         from models.db import WatchedContract as watched_model
-    active = {wc.contract for wc in watched_model.query.filter_by(expired=False).all()}
-    fallbacks = 0
-    for mp in _load_all(price_model):
-        if mp.contract in active and mp.live_price is None and mp.settlement is not None:
-            fallbacks += 1
-    return fallbacks
+
+    from services.cache import get_or_compute, prices_version
+    key = ("count_fallbacks", source, price_model.__tablename__,
+           watched_model.__tablename__, prices_version())
+
+    def _compute():
+        active = {wc.contract for wc in watched_model.query.filter_by(expired=False).all()}
+        fallbacks = 0
+        for mp in _load_all(price_model):
+            if mp.contract in active and mp.live_price is None and mp.settlement is not None:
+                fallbacks += 1
+        return fallbacks
+
+    return get_or_compute(key, 60, _compute)

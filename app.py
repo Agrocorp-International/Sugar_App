@@ -138,6 +138,14 @@ def create_app():
             strike = strike[:-2]
         return format_contract(compact[:option_type_idx + 1] + strike)
 
+    # Startup DDL is opt-out via RUN_STARTUP_MIGRATIONS=false. Default is to
+    # run (preserves bootstrap behaviour for fresh deploys / dev). Set the
+    # env var to 'false' on Azure once the schema is stable to skip ~10
+    # idempotent ALTER/CREATE round trips on every cold start.
+    import os
+    if os.environ.get("RUN_STARTUP_MIGRATIONS", "true").lower() == "false":
+        return app
+
     with app.app_context():
         db.create_all()
         # Lightweight idempotent migration: add per-mode fetch timestamp

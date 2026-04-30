@@ -1,4 +1,5 @@
 import logging
+import os
 from flask import Blueprint, render_template, request, jsonify
 import openpyxl
 from pathlib import Path
@@ -11,6 +12,13 @@ logger = logging.getLogger(__name__)
 raws_bp = Blueprint("raws", __name__)
 
 EXCEL_PATH = Path(__file__).parent.parent / "sugarm2m.xlsm"
+
+# When true (default), an empty book auto-seeds from sugarm2m.xlsm on the
+# first page load — convenient for fresh dev DBs, slow + risky in prod.
+# Set EXCEL_AUTOSEED=false on Azure to disable; the explicit /api/seed and
+# /api/upload endpoints (the page's "Sync from Excel" / "Override from
+# Excel" buttons) remain available either way.
+EXCEL_AUTOSEED = os.environ.get("EXCEL_AUTOSEED", "true").lower() != "false"
 
 WHITES_INPUT_COLS = [
     "Supplier", "AGP", "Year", "Shipment Month", "Buyer", "AGS",
@@ -550,9 +558,9 @@ def index():
         whites_futures_pnl_map = _load_futures_pnl_map(settlement_prices, 'Whites')
         whites_spreads_map, whites_spread_price_map, whites_futures_price_total = _load_whites_spread_maps(price_source)
 
-        # Read Raws deals from DB (auto-seed from Excel if empty)
+        # Read Raws deals from DB (auto-seed from Excel if empty + flag on).
         raws_deals = PhysicalDeal.query.filter_by(book="Raws").order_by(PhysicalDeal.row_index).all()
-        if not raws_deals:
+        if not raws_deals and EXCEL_AUTOSEED:
             _seed_book_from_excel("Raws")
             raws_deals = PhysicalDeal.query.filter_by(book="Raws").order_by(PhysicalDeal.row_index).all()
 
@@ -772,9 +780,9 @@ def index():
             )
             rows.append(row_data)
 
-        # Read Whites deals from DB (auto-seed from Excel if empty)
+        # Read Whites deals from DB (auto-seed from Excel if empty + flag on).
         whites_deals = PhysicalDeal.query.filter_by(book="Whites").order_by(PhysicalDeal.row_index).all()
-        if not whites_deals:
+        if not whites_deals and EXCEL_AUTOSEED:
             _seed_book_from_excel("Whites")
             whites_deals = PhysicalDeal.query.filter_by(book="Whites").order_by(PhysicalDeal.row_index).all()
 

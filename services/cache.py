@@ -84,12 +84,20 @@ def install_autobump():
         db, TradePosition, MarketPrice, WatchedContract,
         PhysicalTrade, FFATrade, FFASettlement, PhysicalDeal, PnlOverride,
     )
+    from models.cotton import (
+        CottonTradePosition, CottonMarketPrice, CottonWatchedContract,
+        CottonPhysicalDeal,
+    )
 
+    # Sugar and cotton share these counters intentionally: a sugar write also
+    # busts cotton-keyed cache entries (and vice versa). Cheap rebuild beats
+    # a second counter for each section.
     position_models = {
         TradePosition, PhysicalTrade, FFATrade, FFASettlement,
         PhysicalDeal, PnlOverride,
+        CottonTradePosition, CottonPhysicalDeal,
     }
-    price_models = {MarketPrice, WatchedContract}
+    price_models = {MarketPrice, WatchedContract, CottonMarketPrice, CottonWatchedContract}
 
     @event.listens_for(db.session, "before_commit")
     def _mark_pending_bumps(session):

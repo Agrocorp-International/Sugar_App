@@ -5,6 +5,7 @@ no calculated columns yet. JSON-blob storage in cotton_physical_deals lets us ad
 later without a migration.
 """
 import logging
+import os
 from datetime import datetime, date
 from pathlib import Path
 from flask import Blueprint, render_template, request, jsonify
@@ -18,6 +19,11 @@ logger = logging.getLogger(__name__)
 cotton_physical_bp = Blueprint("cotton_physical", __name__)
 
 EXCEL_PATH = Path(__file__).parent.parent / "cottonm2m.xlsm"
+
+# When true (default), an empty Purchases table auto-seeds from cottonm2m.xlsm
+# on the first page load. Set EXCEL_AUTOSEED=false on Azure to disable; the
+# explicit "Sync from Excel" / "Override from Excel" buttons keep working.
+EXCEL_AUTOSEED = os.environ.get("EXCEL_AUTOSEED", "true").lower() != "false"
 
 # Authoritative list of Phase 1 input columns for the Purchases sheet.
 # Matches Excel headers in row 2 of cottonm2m.xlsm "Purchases" sheet.
@@ -320,7 +326,7 @@ def index():
         tagged_lots_map, price_total_map = _load_trade_aggs(book='Purchases')
 
         deals = CottonPhysicalDeal.query.filter_by(book="Purchases").order_by(CottonPhysicalDeal.row_index).all()
-        if not deals:
+        if not deals and EXCEL_AUTOSEED:
             _seed_purchases_from_disk()
             deals = CottonPhysicalDeal.query.filter_by(book="Purchases").order_by(CottonPhysicalDeal.row_index).all()
         for deal in deals:
