@@ -1,0 +1,578 @@
+{% extends "base.html" %}
+{% block title %}PHYS Trades - Cotton{% endblock %}
+
+{% block content %}
+<style>
+  .phys-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 75vh;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+  }
+  .phys-table {
+    border-collapse: collapse;
+    white-space: nowrap;
+    width: max-content;
+    min-width: 100%;
+    font-size: 0.85rem;
+  }
+  .phys-table thead th {
+    background-color: #cfe2ff;
+    color: #333;
+    font-weight: bold;
+    text-align: center;
+    border: 1px solid #c8c8c8;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 4px 6px;
+    min-width: 80px;
+    max-width: 140px;
+    vertical-align: middle;
+    white-space: normal;
+  }
+  .phys-table thead th.idx-col { min-width: 36px; padding: 6px 4px; }
+  .phys-table td {
+    border: 1px solid #e8e8e8;
+    padding: 4px 8px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .phys-table tbody tr:hover { background-color: #f4f8ff; }
+
+  .th-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    white-space: normal;
+    word-break: break-word;
+    text-align: center;
+    line-height: 1.2;
+    height: 100%;
+  }
+  .th-label:hover { opacity: 0.8; }
+  .sort-icon { font-size: 0.65em; opacity: 0.45; flex-shrink: 0; }
+  .sort-icon.active { opacity: 1; }
+
+  .group-header { user-select: none; cursor: pointer; }
+  .group-header:hover { filter: brightness(0.92); }
+
+  .editable-cell { cursor: text; position: relative; }
+  .editable-cell:hover { background-color: #e8f4ff !important; }
+  .editable-cell:hover::after { content: " \270F"; font-size: 0.75em; opacity: 0.6; }
+  .muted-cell { background-color: #f0f0f0; color: #aaa; cursor: not-allowed; }
+  .phys-table thead th.calc-col { background-color: #d0d0d0; color: #333; }
+  .calc-cell { cursor: default; }
+</style>
+
+<h4 class="mb-3">PHYS Trades</h4>
+
+<div class="tab-switcher" id="physSwitcher">
+  <button class="tab-sw-btn active" id="tab-purchases" data-target="#pane-purchases" type="button">
+    <i class="bi bi-cart-plus"></i>Purchases
+  </button>
+  <button class="tab-sw-btn" id="tab-sales" data-target="#pane-sales" type="button">
+    <i class="bi bi-cart-check"></i>Sales
+  </button>
+</div>
+
+<!-- Unsaved changes bar -->
+<div id="saveBar" class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="display:none!important;">
+  <i class="bi bi-pencil-square"></i>
+  <span><strong id="pendingCount">0</strong> unsaved change(s)</span>
+  <button class="btn btn-primary btn-sm ms-auto" id="saveAllBtn">
+    <i class="bi bi-floppy me-1"></i>Save All Changes
+  </button>
+  <button class="btn btn-outline-secondary btn-sm" id="discardAllBtn">Discard</button>
+</div>
+
+<div class="tab-content">
+
+<div class="tab-pane show active" id="pane-purchases">
+<div class="mb-2 d-flex align-items-center gap-3">
+  <small class="text-muted">{{ rows|length }} records</small>
+  <button class="btn btn-outline-dark" onclick="toggleAllGroups('purchasesTable', 'cotton_purchases_collapsed_groups', true)"><i class="bi bi-dash-square me-2"></i>Collapse All</button>
+  <button class="btn btn-outline-dark" onclick="toggleAllGroups('purchasesTable', 'cotton_purchases_collapsed_groups', false)"><i class="bi bi-plus-square me-2"></i>Expand All</button>
+  <button class="btn btn-outline-danger btn-sm" id="deleteSelectedBtn" style="display:none;" onclick="deleteSelected()"><i class="bi bi-trash me-1"></i>Delete Selected</button>
+  <div class="ms-auto d-flex gap-2">
+    <button class="btn btn-outline-secondary btn-sm" onclick="seedFromDisk()" title="Reload from cottonm2m.xlsm on disk (replaces current Purchases data)">
+      <i class="bi bi-arrow-repeat me-1"></i>Sync from Excel
+    </button>
+    <button class="btn btn-outline-warning btn-sm" onclick="document.getElementById('excelUpload').click()" title="Upload an .xlsm file to replace current Purchases data">
+      <i class="bi bi-upload me-1"></i>Override from Excel
+    </button>
+    <input type="file" id="excelUpload" accept=".xlsm,.xlsx" style="display:none" onchange="uploadExcel(this)">
+  </div>
+</div>
+
+{% if error %}
+  <div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    Error loading data: {{ error }}
+  </div>
+{% elif rows %}
+  {# Build (group, span) pairs by walking columns in order. #}
+  {% set group_spans = [] %}
+  {% set ns = namespace(prev='__start__', count=0) %}
+  {% set col_to_group = {} %}
+  {% for group, cols in column_groups.items() %}
+    {% for c in cols %}
+      {% set _ = col_to_group.update({c: group}) %}
+    {% endfor %}
+  {% endfor %}
+  {% for col in columns %}
+    {% set g = col_to_group.get(col, '') %}
+    {% if ns.prev == '__start__' %}
+      {% set ns.prev = g %}{% set ns.count = 1 %}
+    {% elif g == ns.prev %}
+      {% set ns.count = ns.count + 1 %}
+    {% else %}
+      {% set _ = group_spans.append((ns.prev, ns.count)) %}
+      {% set ns.prev = g %}{% set ns.count = 1 %}
+    {% endif %}
+    {% if loop.last %}{% set _ = group_spans.append((ns.prev, ns.count)) %}{% endif %}
+  {% endfor %}
+  <div class="phys-wrap">
+    <table class="phys-table" id="purchasesTable">
+      <thead>
+        <tr>
+          <th class="idx-col" rowspan="2" style="vertical-align:middle;" onclick="sortTable('purchasesTable', 0, this)"><div class="th-label"><span>#</span><i class="bi bi-arrow-down-up sort-icon"></i></div></th>
+          {% for group, span in group_spans %}
+            {% set gid = group_ids.get(group, '') %}
+            <th colspan="{{ span }}" data-group-id="{{ gid }}" data-group-toggle="{{ gid }}" data-original-colspan="{{ span }}"
+                class="group-header" style="background:{{ group_colors.get(group, '#f0f0f0') }};text-align:center;border:1px solid #c8c8c8;font-weight:bold;cursor:pointer;"
+                onclick="toggleGroup('purchasesTable', '{{ gid }}', 'cotton_purchases_collapsed_groups')">
+              <i class="bi bi-dash-square" style="font-size:1.1em;margin-right:4px;vertical-align:middle;"></i>{{ group }}
+            </th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for col in columns %}
+          {% set gid = group_ids.get(col_to_group.get(col, ''), '') %}
+          <th{% if col in calculated_cols %} class="calc-col"{% endif %} data-col-group="{{ gid }}">
+            <div class="th-label" onclick="sortTable('purchasesTable', {{ loop.index }}, this)">
+              <span>{{ col }}</span>
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr data-id="{{ row['_deal_id'] }}">
+          <td class="text-muted"><input type="checkbox" class="row-check" value="{{ row['_deal_id'] }}"></td>
+          {% for col in columns %}
+          {% set gid = group_ids.get(col_to_group.get(col, ''), '') %}
+          {% set is_calc = col in calculated_cols %}
+          {% set is_muted = col in ('Exchange Rate', 'Forward Rate') and (row['Currency'] or '')|string|upper == 'USD' %}
+          {% if is_calc %}
+          <td class="calc-cell" data-col-group="{{ gid }}">
+          {% else %}
+          <td class="{% if is_muted %}muted-cell{% else %}editable-cell{% endif %}" data-col-group="{{ gid }}"{% if not is_muted %} data-field="{{ col }}" data-value="{{ row[col] if row[col] is not none else '' }}"{% endif %}>
+          {% endif %}
+            {%- set val = row[col] -%}
+            {%- if val is none -%}
+            {%- elif is_calc and col in percent_cols and val is number -%}
+              {{ "%.1f"|format(val * 100) }}%
+            {%- elif is_calc and col in one_dp_cols and val is number -%}
+              {{ "%.1f"|format(val) }}
+            {%- elif is_calc and val is number -%}
+              {{ "%.2f"|format(val) }}
+            {%- elif val is number and val == val|int -%}
+              {{ val|int }}
+            {%- elif val is number -%}
+              {{ "%.4f"|format(val) }}
+            {%- else -%}
+              {{ val }}
+            {%- endif -%}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-inbox fs-1"></i>
+    <p class="mt-2">No data found. Use "Sync from Excel" or "Override from Excel" to load deals.</p>
+  </div>
+{% endif %}
+</div>{# end pane-purchases #}
+
+<div class="tab-pane" id="pane-sales">
+  <div class="alert alert-info mt-3">
+    <i class="bi bi-info-circle me-1"></i>
+    Sales import will be added in Phase 2. Only Purchases is active right now.
+  </div>
+</div>
+
+</div>{# end tab-content #}
+
+<script>
+// Manual tab switching with URL hash persistence
+(function() {
+  const switcher = document.getElementById('physSwitcher');
+  if (!switcher) return;
+  const buttons  = switcher.querySelectorAll('.tab-sw-btn');
+  const panes    = document.querySelectorAll('.tab-content > .tab-pane');
+
+  function activateTab(btn) {
+    const target = btn.getAttribute('data-target');
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    panes.forEach(p => p.classList.remove('show', 'active'));
+    const pane = document.querySelector(target);
+    if (pane) requestAnimationFrame(() => pane.classList.add('active', 'show'));
+    location.hash = target;
+  }
+
+  buttons.forEach(btn => btn.addEventListener('click', () => activateTab(btn)));
+
+  if (location.hash === '#pane-sales') {
+    activateTab(document.getElementById('tab-sales'));
+  }
+})();
+
+// Fix sticky top offset for two-row headers
+function fixHeaderSticky(tableId) {
+  const tbl = document.getElementById(tableId);
+  if (!tbl) return;
+  const rows = tbl.querySelectorAll('thead tr');
+  if (rows.length < 2) return;
+  const h = rows[0].offsetHeight;
+  rows[1].querySelectorAll('th').forEach(th => { th.style.top = h + 'px'; });
+}
+fixHeaderSticky('purchasesTable');
+
+// ── Sort ────────────────────────────────────────────────────────────
+const sortStates = {};
+function sortTable(tableId, colIdx, labelEl) {
+  const table = document.getElementById(tableId);
+  const tbody = table.tBodies[0];
+  const rows = Array.from(tbody.rows).filter(r => r.style.display !== 'none');
+  const hiddenRows = Array.from(tbody.rows).filter(r => r.style.display === 'none');
+  if (!sortStates[tableId]) sortStates[tableId] = {};
+  const dir = sortStates[tableId][colIdx] === 'asc' ? 'desc' : 'asc';
+  sortStates[tableId] = {};
+  sortStates[tableId][colIdx] = dir;
+
+  table.querySelectorAll('.sort-icon').forEach(el => {
+    el.className = 'bi bi-arrow-down-up sort-icon';
+  });
+  const icon = labelEl.querySelector('.sort-icon');
+  icon.className = `bi ${dir === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'} sort-icon active`;
+
+  rows.sort((a, b) => {
+    const aText = a.cells[colIdx].textContent.trim();
+    const bText = b.cells[colIdx].textContent.trim();
+    const aNum = parseFloat(aText.replace(/,/g, ''));
+    const bNum = parseFloat(bText.replace(/,/g, ''));
+    if (!isNaN(aNum) && !isNaN(bNum)) return dir === 'asc' ? aNum - bNum : bNum - aNum;
+    return dir === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  hiddenRows.forEach(r => tbody.appendChild(r));
+}
+
+// ── Column group collapse / expand ──────────────────────────────────
+function getCollapsedGroups(storageKey) {
+  try { return JSON.parse(localStorage.getItem(storageKey)) || []; }
+  catch { return []; }
+}
+function saveCollapsedGroups(storageKey, groups) {
+  localStorage.setItem(storageKey, JSON.stringify(groups));
+}
+function applyGroupState(tableId, groupId, collapsed) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const rowMap = new Map();
+  table.querySelectorAll('[data-col-group="' + groupId + '"]').forEach(el => {
+    const row = el.parentElement;
+    if (!rowMap.has(row)) rowMap.set(row, []);
+    rowMap.get(row).push(el);
+  });
+  rowMap.forEach((cells, row) => {
+    cells.forEach((el, idx) => {
+      if (collapsed) {
+        if (idx === 0) {
+          el.style.display = '';
+          if (!el.hasAttribute('data-original-content')) {
+            el.setAttribute('data-original-content', el.innerHTML);
+            el.setAttribute('data-original-min-width', el.style.minWidth || '');
+          }
+          el.innerHTML = '<span style="color:#aaa;">&#8230;</span>';
+          el.style.minWidth = '28px';
+          el.style.maxWidth = '28px';
+          el.style.padding = '2px';
+          el.style.overflow = 'hidden';
+        } else {
+          el.style.display = 'none';
+        }
+      } else {
+        el.style.display = '';
+        if (el.hasAttribute('data-original-content')) {
+          el.innerHTML = el.getAttribute('data-original-content');
+          el.style.minWidth = el.getAttribute('data-original-min-width');
+          el.style.maxWidth = '';
+          el.style.padding = '';
+          el.style.overflow = '';
+          el.removeAttribute('data-original-content');
+          el.removeAttribute('data-original-min-width');
+        }
+      }
+    });
+  });
+  const header = table.querySelector('[data-group-id="' + groupId + '"]');
+  if (header) {
+    if (collapsed) {
+      if (!header.hasAttribute('data-original-content')) {
+        header.setAttribute('data-original-content', header.innerHTML);
+      }
+      header.colSpan = 1;
+      header.innerHTML = '<i class="bi bi-plus-square" style="font-size:1.1em;"></i>';
+      header.style.minWidth = '28px';
+      header.style.maxWidth = '28px';
+      header.style.padding = '4px';
+      header.style.overflow = 'hidden';
+      header.title = 'Click to expand';
+    } else {
+      header.colSpan = parseInt(header.getAttribute('data-original-colspan'));
+      if (header.hasAttribute('data-original-content')) {
+        header.innerHTML = header.getAttribute('data-original-content');
+        header.removeAttribute('data-original-content');
+      }
+      header.style.minWidth = '';
+      header.style.maxWidth = '';
+      header.style.padding = '';
+      header.style.overflow = '';
+      header.title = '';
+    }
+  }
+}
+function toggleGroup(tableId, groupId, storageKey) {
+  let collapsed = getCollapsedGroups(storageKey);
+  const isCollapsed = collapsed.includes(groupId);
+  if (isCollapsed) {
+    collapsed = collapsed.filter(g => g !== groupId);
+  } else {
+    collapsed.push(groupId);
+  }
+  saveCollapsedGroups(storageKey, collapsed);
+  applyGroupState(tableId, groupId, !isCollapsed);
+}
+function toggleAllGroups(tableId, storageKey, collapse) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const allIds = [];
+  table.querySelectorAll('[data-group-id]').forEach(el => {
+    const gid = el.getAttribute('data-group-id');
+    if (gid && !allIds.includes(gid)) allIds.push(gid);
+  });
+  allIds.forEach(gid => applyGroupState(tableId, gid, collapse));
+  saveCollapsedGroups(storageKey, collapse ? allIds : []);
+}
+function restoreGroupStates(tableId, storageKey) {
+  const collapsed = getCollapsedGroups(storageKey);
+  collapsed.forEach(groupId => applyGroupState(tableId, groupId, true));
+}
+restoreGroupStates('purchasesTable', 'cotton_purchases_collapsed_groups');
+
+// ── Inline editing ──────────────────────────────────────────────────
+const NUMERIC_FIELDS = new Set({{ numeric_cols|list|tojson }});
+const DATE_FIELDS = new Set({{ date_cols|list|tojson }});
+const DIRTY_COLOR = "#fff8d6";
+const UPDATE_URL = "{{ url_for('cotton_physical.api_update') }}";
+let editingCell = null;
+const pendingChanges = {};
+
+document.querySelectorAll(".editable-cell").forEach(td => {
+  td.addEventListener("click", function (e) {
+    if (e.target.tagName === "INPUT" && e.target.type === "checkbox") return;
+    if (editingCell && editingCell.td === td) return;
+    if (editingCell) commitEdit(editingCell);
+
+    const field = td.dataset.field;
+    if (!field) return;
+    const currentValue = td.dataset.value;
+    const rowId = td.closest("tr").dataset.id;
+    editingCell = { td, rowId, field, originalValue: currentValue };
+
+    const input = document.createElement("input");
+    if (DATE_FIELDS.has(field)) {
+      input.type = "date";
+    } else if (NUMERIC_FIELDS.has(field)) {
+      input.type = "number";
+      input.step = "any";
+    } else {
+      input.type = "text";
+    }
+    input.value = currentValue;
+    input.className = "form-control form-control-sm" + (NUMERIC_FIELDS.has(field) ? " text-end" : "");
+    input.style.minWidth = "100px";
+    input.style.padding = "2px 4px";
+    input.style.fontSize = "0.85rem";
+
+    td.textContent = "";
+    td.appendChild(input);
+    input.focus();
+    if (input.type === "text" || input.type === "number") input.select();
+
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter")  { e.preventDefault(); commitEdit(editingCell); }
+      if (e.key === "Escape") { e.preventDefault(); cancelEdit(editingCell); }
+    });
+    input.addEventListener("blur", function () {
+      setTimeout(() => { if (editingCell) commitEdit(editingCell); }, 150);
+    });
+  });
+});
+
+function cancelEdit(state) {
+  editingCell = null;
+  state.td.textContent = state.td.dataset.value;
+}
+
+function commitEdit(state) {
+  editingCell = null;
+  const input = state.td.querySelector("input");
+  if (!input) return;
+  const newValue = input.value.trim();
+  if (newValue === state.originalValue) {
+    state.td.textContent = state.originalValue;
+    return;
+  }
+  stageChange(state.rowId, state.field, newValue);
+}
+
+function stageChange(rowId, field, value) {
+  const key = `${rowId}|${field}`;
+  pendingChanges[key] = { record_id: parseInt(rowId), field, value };
+  const tr = document.querySelector(`tr[data-id="${rowId}"]`);
+  if (tr) {
+    const td = tr.querySelector(`.editable-cell[data-field="${field}"]`);
+    if (td) {
+      td.textContent = value;
+      td.dataset.value = value;
+      td.style.backgroundColor = DIRTY_COLOR;
+    }
+  }
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  const count = Object.keys(pendingChanges).length;
+  const bar = document.getElementById("saveBar");
+  if (count > 0) {
+    bar.style.removeProperty("display");
+    bar.style.display = "flex";
+    document.getElementById("pendingCount").textContent = count;
+  } else {
+    bar.style.setProperty("display", "none", "important");
+  }
+}
+
+document.getElementById("saveAllBtn")?.addEventListener("click", function () {
+  const changes = Object.values(pendingChanges);
+  if (!changes.length) return;
+  fetch(UPDATE_URL, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({changes})
+  })
+  .then(r => r.json())
+  .then(result => {
+    if (!result.ok) {
+      alert("Save failed: " + (result.error || "Unknown error"));
+      return;
+    }
+    location.reload();
+  })
+  .catch(() => { alert("Network error. Reloading."); location.reload(); });
+});
+
+document.getElementById("discardAllBtn")?.addEventListener("click", () => location.reload());
+
+// ── Checkbox selection for delete ──────────────────────────────────
+document.querySelectorAll(".row-check").forEach(cb => {
+  cb.addEventListener("change", () => {
+    const checked = document.querySelectorAll(".row-check:checked").length;
+    document.getElementById("deleteSelectedBtn").style.display = checked ? "" : "none";
+  });
+});
+
+// ── Delete / Upload / Seed ─────────────────────────────────────────
+function deleteSelected() {
+  const ids = Array.from(document.querySelectorAll(".row-check:checked")).map(cb => parseInt(cb.value));
+  if (!ids.length) return;
+  if (Object.keys(pendingChanges).length > 0) {
+    if (!confirm("You have unsaved edits that will be lost. Continue?")) return;
+  }
+  if (!confirm(`Delete ${ids.length} deal(s)? This cannot be undone.`)) return;
+  fetch("{{ url_for('cotton_physical.api_delete') }}", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ids})
+  })
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) location.reload();
+    else alert("Delete failed: " + (result.error || "Unknown error"));
+  })
+  .catch(() => alert("Network error."));
+}
+
+function reportSeedResult(result) {
+  let msg = `Done. Deleted ${result.deleted}, inserted ${result.inserted}.`;
+  if (result.duplicates && result.duplicates.length) {
+    msg += `\n\nWarning: ${result.duplicates.length} duplicate Contract Reference(s) in the file:\n` +
+           result.duplicates.slice(0, 10).join("\n") +
+           (result.duplicates.length > 10 ? `\n…and ${result.duplicates.length - 10} more` : "");
+  }
+  alert(msg);
+}
+
+function seedFromDisk() {
+  if (!confirm("Sync will replace ALL Purchases rows in the database with the contents of cottonm2m.xlsm on disk. Continue?")) return;
+  fetch("{{ url_for('cotton_physical.api_seed') }}", {method: "POST"})
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) {
+      reportSeedResult(result);
+      location.reload();
+    } else {
+      alert("Seed failed: " + (result.error || "Unknown error"));
+    }
+  })
+  .catch(() => alert("Network error."));
+}
+
+function uploadExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm("Upload will replace ALL Purchases rows in the database with the contents of the selected workbook. Continue?")) {
+    input.value = "";
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  fetch("{{ url_for('cotton_physical.api_upload') }}", {method: "POST", body: form})
+  .then(r => r.json())
+  .then(result => {
+    if (result.ok) {
+      reportSeedResult(result);
+      location.reload();
+    } else {
+      alert("Upload failed: " + (result.error || "Unknown error"));
+    }
+    input.value = "";
+  })
+  .catch(() => { alert("Network error."); input.value = ""; });
+}
+</script>
+{% endblock %}

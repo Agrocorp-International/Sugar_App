@@ -151,3 +151,18 @@ class CottonIndexRow(db.Model):
 
     def __repr__(self):
         return f"<CottonIndexRow {self.table_name} #{self.row_index}>"
+
+
+class CottonPhysicalDeal(db.Model):
+    __tablename__ = "cotton_physical_deals"
+
+    id         = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    book       = db.Column(db.String(20), nullable=False, index=True)  # 'Purchases' or 'Sales'
+    row_index  = db.Column(db.Integer, nullable=False)
+    data       = db.Column(db.JSON, nullable=False)
+    source     = db.Column(db.String(20), nullable=False, default="excel-default")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CottonPhysicalDeal {self.book} #{self.row_index}>"
