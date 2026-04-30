@@ -2,107 +2,227 @@
 {% block title %}Info - Cotton Trading{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-  <h4 class="mb-0">Info</h4>
-  <p class="text-muted small mt-1">Reference data for cotton (CT) futures, options, and NYSE market holidays.</p>
-</div>
-
-<div class="d-flex align-items-start gap-4 flex-wrap">
-
-  {# ── CT Futures Contracts ─────────────────────────────────────────────── #}
-  <div class="card d-inline-block">
-    <div class="card-header fw-semibold py-1 px-2">CT Futures (Cotton #2)</div>
+{% macro render_info_table(title, headers, rows, header_class) %}
+  <div class="card d-inline-block align-top">
+    <div class="card-header fw-semibold py-1 px-2">{{ title }}</div>
     <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0 w-auto">
-        <thead class="table-dark">
-          <tr>
-            <th class="text-center">Contract</th>
-            <th class="text-center">Ref Date</th>
-            <th class="text-center">Expiry</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in futures %}
+      {% if headers and rows %}
+        <table class="table table-sm table-hover mb-0 w-auto">
+          <thead class="{{ header_class }}">
             <tr>
-              <td class="font-monospace">{{ f.contract }}</td>
-              <td class="text-nowrap">
-                {% if f.ref_date %}{{ f.ref_date.strftime("%d %b %Y") }}{% else %}—{% endif %}
-              </td>
-              <td class="text-nowrap">
-                {% if f.expiry %}{{ f.expiry.strftime("%d %b %Y") }}{% else %}—{% endif %}
-              </td>
+              {% for h in headers %}
+                <th class="text-center">{{ h }}</th>
+              {% endfor %}
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {# ── CT Options Contracts (listed months only) ────────────────────────── #}
-  <div class="card d-inline-block">
-    <div class="card-header fw-semibold py-1 px-2">CT Options (Cotton #2)</div>
-    <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0 w-auto">
-        <thead class="table-dark">
-          <tr>
-            <th class="text-center">Contract</th>
-            <th class="text-center">Underlying</th>
-            <th class="text-center">Ref Date</th>
-            <th class="text-center">Expiry</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for o in options %}
-            <tr>
-              <td class="font-monospace">{{ o.contract }}</td>
-              <td class="font-monospace">{{ o.underlying }}</td>
-              <td class="text-nowrap">
-                {% if o.ref_date %}{{ o.ref_date.strftime("%d %b %Y") }}{% else %}—{% endif %}
-              </td>
-              <td class="text-nowrap">
-                {% if o.expiry %}{{ o.expiry.strftime("%d %b %Y") }}{% else %}—{% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {# ── US Market Holidays ──────────────────────────────────────────────── #}
-  <div class="card d-inline-block">
-    <div class="card-header fw-semibold py-1 px-2">US Market Holidays (NYSE)</div>
-    <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0 w-auto">
-        <thead class="table-dark">
-          <tr>
-            <th class="text-center">Holiday</th>
-            <th class="text-center">Date</th>
-            <th class="text-center">Day</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for year, entries in grouped.items() %}
-            <tr class="table-secondary">
-              <td colspan="3" class="fw-semibold small text-muted py-1">{{ year }}</td>
-            </tr>
-            {% for h in entries %}
-              <tr {% if h.date == upcoming_date %}class="table-warning"{% endif %}>
-                <td>
-                  {{ h.name }}
-                  {% if h.date == upcoming_date %}
-                    <span class="badge bg-warning text-dark ms-1 small">Next</span>
-                  {% endif %}
-                </td>
-                <td class="text-nowrap">{{ h.date.strftime("%d %b %Y") }}</td>
-                <td class="text-muted">{{ h.day }}</td>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                {% for value in row %}
+                  <td class="text-nowrap text-center">
+                    {% if value is none or (value is string and not value) %}
+                      <span class="text-muted">&mdash;</span>
+                    {% else %}
+                      {{ value }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
               </tr>
             {% endfor %}
-          {% endfor %}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      {% else %}
+        <div class="text-muted small p-3">No rows found in cottonm2m.xlsm.</div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+<div class="d-flex align-items-start mb-3">
+  <div>
+    <h4 class="mb-0">Info</h4>
+    <p class="text-muted small mt-1 mb-0">Reference data for cotton (CT) futures, options, and NYSE market holidays.</p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <button class="btn btn-outline-warning btn-sm" onclick="document.getElementById('infoUpload').click()">
+      <i class="bi bi-upload me-1"></i>Override from Excel
+    </button>
+    <input type="file" id="infoUpload" accept=".xlsm,.xlsx" style="display:none" onchange="uploadInfoExcel(this)">
+  </div>
+</div>
+
+<div class="tab-switcher" id="cottonInfoSwitcher">
+  <button class="tab-sw-btn active" id="ice-contracts-tab-btn" data-target="#ice-contracts-tab" type="button">
+    <i class="bi bi-calendar-event"></i>ICE Contracts
+  </button>
+  <button class="tab-sw-btn" id="miscellaneous-tab-btn" data-target="#miscellaneous-tab" type="button">
+    <i class="bi bi-grid"></i>Miscellaneous
+  </button>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const switcher = document.getElementById('cottonInfoSwitcher');
+  const buttons = switcher.querySelectorAll('.tab-sw-btn');
+  const panes = document.querySelectorAll('#cottonInfoTabContent > .tab-pane');
+
+  function activateTab(btn) {
+    const target = btn.getAttribute('data-target');
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    panes.forEach(p => p.classList.remove('show', 'active'));
+    const pane = document.querySelector(target);
+    if (pane) {
+      requestAnimationFrame(() => { pane.classList.add('active', 'show'); });
+    }
+    localStorage.setItem('cottonInfoActiveTab', '#' + btn.id);
+  }
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn));
+  });
+
+  const saved = localStorage.getItem('cottonInfoActiveTab');
+  if (saved) {
+    const btn = document.querySelector(saved);
+    if (btn) activateTab(btn);
+  }
+});
+</script>
+
+<div class="tab-content" id="cottonInfoTabContent">
+  <div class="tab-pane show active" id="ice-contracts-tab" role="tabpanel">
+    <div class="d-flex align-items-start gap-4 flex-wrap">
+      <div class="card d-inline-block">
+        <div class="card-header fw-semibold py-1 px-2">CT Futures (Cotton #2)</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0 w-auto">
+            <thead class="table-dark">
+              <tr>
+                <th class="text-center">Contract</th>
+                <th class="text-center">Ref Date</th>
+                <th class="text-center">Expiry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in futures %}
+                <tr>
+                  <td class="font-monospace">{{ f.contract }}</td>
+                  <td class="text-nowrap">
+                    {% if f.ref_date %}{{ f.ref_date.strftime("%d %b %Y") }}{% else %}&mdash;{% endif %}
+                  </td>
+                  <td class="text-nowrap">
+                    {% if f.expiry %}{{ f.expiry.strftime("%d %b %Y") }}{% else %}&mdash;{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card d-inline-block">
+        <div class="card-header fw-semibold py-1 px-2">CT Options (Cotton #2)</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0 w-auto">
+            <thead class="table-dark">
+              <tr>
+                <th class="text-center">Contract</th>
+                <th class="text-center">Underlying</th>
+                <th class="text-center">Ref Date</th>
+                <th class="text-center">Expiry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for o in options %}
+                <tr>
+                  <td class="font-monospace">{{ o.contract }}</td>
+                  <td class="font-monospace">{{ o.underlying }}</td>
+                  <td class="text-nowrap">
+                    {% if o.ref_date %}{{ o.ref_date.strftime("%d %b %Y") }}{% else %}&mdash;{% endif %}
+                  </td>
+                  <td class="text-nowrap">
+                    {% if o.expiry %}{{ o.expiry.strftime("%d %b %Y") }}{% else %}&mdash;{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card d-inline-block">
+        <div class="card-header fw-semibold py-1 px-2">US Market Holidays (NYSE)</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0 w-auto">
+            <thead class="table-dark">
+              <tr>
+                <th class="text-center">Holiday</th>
+                <th class="text-center">Date</th>
+                <th class="text-center">Day</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for year, entries in grouped.items() %}
+                <tr class="table-secondary">
+                  <td colspan="3" class="fw-semibold small text-muted py-1">{{ year }}</td>
+                </tr>
+                {% for h in entries %}
+                  <tr {% if h.date == upcoming_date %}class="table-warning"{% endif %}>
+                    <td>
+                      {{ h.name }}
+                      {% if h.date == upcoming_date %}
+                        <span class="badge bg-warning text-dark ms-1 small">Next</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-nowrap">{{ h.date.strftime("%d %b %Y") }}</td>
+                    <td class="text-muted">{{ h.day }}</td>
+                  </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
+  <div class="tab-pane" id="miscellaneous-tab" role="tabpanel">
+    <div class="d-flex align-items-start gap-4 flex-wrap">
+      {% for table in misc_info_tables %}
+        {{ render_info_table(table.name, table.headers, table.rows, loop.cycle('table-primary', 'table-warning', 'table-success', 'table-info')) }}
+      {% else %}
+        <div class="text-muted small">No miscellaneous info tables found in cottonm2m.xlsm.</div>
+      {% endfor %}
+    </div>
+  </div>
 </div>
+
+<script>
+function uploadInfoExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm("This will replace the Miscellaneous info tables from the uploaded workbook. Continue?")) {
+    input.value = "";
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  fetch("{{ url_for('cotton_info.api_upload') }}", {method: "POST", body: form})
+    .then(r => r.json())
+    .then(result => {
+      if (result.ok) {
+        alert(`Loaded ${result.origins} origins + ${result.colours} colours + ${result.waf_colours} WAF colours + ${result.financing} financing rows.`);
+        location.reload();
+      } else {
+        alert("Upload failed: " + (result.error || "Unknown error"));
+        input.value = "";
+      }
+    })
+    .catch(() => {
+      alert("Network error.");
+      input.value = "";
+    });
+}
+</script>
 {% endblock %}

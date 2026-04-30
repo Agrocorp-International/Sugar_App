@@ -29,9 +29,19 @@ Formulas (ICE Cotton #2 product specifications):
     G, J, M, Q are NOT listed CT option contracts.
 """
 import logging
+import io
+import posixpath
+import re
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, date, timedelta
 from collections import defaultdict
-from flask import Blueprint, render_template
+from functools import lru_cache
+from pathlib import Path
+from flask import Blueprint, jsonify, render_template, request
+
+from models.cotton import CottonIndexRow
+from models.db import db
 
 from services.exchange_calendar import (
     FUTURES_MONTH_CODES,
@@ -45,6 +55,25 @@ from services.exchange_calendar import (
 )
 
 cotton_info_bp = Blueprint("cotton_info", __name__)
+
+EXCEL_PATH = Path(__file__).parent.parent / "cottonm2m.xlsm"
+MISC_INFO_TABLES = (
+    "Info_Origins",
+    "Info_Colours",
+    "Info_WAF_Colours",
+    "Info_Financing",
+)
+MISC_INFO_HEADERS = {
+    "Info_Origins": ["Origin", "Region"],
+    "Info_Colours": ["Colour", "Grade"],
+    "Info_WAF_Colours": ["WAF Colour", "Grade"],
+    "Info_Financing": ["Origin", "Interest", "Default Financing", "Misc"],
+}
+_XML_NS = {
+    "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
+}
 
 
 # ICE Cotton #2 (CT) listed contract months: March, May, July, October, December.
@@ -121,6 +150,198 @@ def _generate_ct_options(years_back=YEARS_BACK, years_forward=YEARS_FORWARD):
             und_yy = (yr + year_offset) % 100
             out.append((f"CT {opt_code}{yy:02d}", f"CT {und_code}{und_yy:02d}"))
     return out
+
+
+def _column_to_number(col):
+    out = 0
+    for ch in col:
+        out = out * 26 + ord(ch.upper()) - 64
+    return out
+
+
+def _number_to_column(num):
+    out = ""
+    while num:
+        num, rem = divmod(num - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
+def _split_cell_ref(cell_ref):
+    match = re.match(r"^([A-Z]+)(\d+)$", cell_ref)
+    if not match:
+        raise ValueError(f"Invalid cell reference: {cell_ref!r}")
+    return int(match.group(2)), _column_to_number(match.group(1))
+
+
+def _shared_strings(zip_file):
+    if "xl/sharedStrings.xml" not in zip_file.namelist():
+        return []
+    root = ET.fromstring(zip_file.read("xl/sharedStrings.xml"))
+    return [
+        "".join(t.text or "" for t in si.findall(".//m:t", _XML_NS))
+        for si in root.findall("m:si", _XML_NS)
+    ]
+
+
+def _sheet_path(zip_file, sheet_name):
+    workbook = ET.fromstring(zip_file.read("xl/workbook.xml"))
+    rels = ET.fromstring(zip_file.read("xl/_rels/workbook.xml.rels"))
+    rel_map = {r.attrib["Id"]: r.attrib["Target"] for r in rels}
+    for sheet in workbook.find("m:sheets", _XML_NS):
+        if sheet.attrib.get("name") == sheet_name:
+            rid = sheet.attrib["{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"]
+            return "xl/" + rel_map[rid].lstrip("/")
+    raise ValueError(f"Workbook is missing sheet {sheet_name!r}")
+
+
+def _sheet_table_paths(zip_file, sheet_path):
+    rel_path = (
+        sheet_path.rsplit("/", 1)[0] + "/_rels/" +
+        sheet_path.rsplit("/", 1)[1] + ".rels"
+    )
+    if rel_path not in zip_file.namelist():
+        return []
+    rels = ET.fromstring(zip_file.read(rel_path))
+    base = sheet_path.rsplit("/", 1)[0]
+    return [
+        posixpath.normpath(posixpath.join(base, rel.attrib["Target"]))
+        for rel in rels
+        if rel.attrib.get("Type", "").endswith("/table")
+    ]
+
+
+def _cell_value(cell, shared_strings):
+    value = cell.find("m:v", _XML_NS)
+    cell_type = cell.attrib.get("t")
+    if cell_type == "inlineStr":
+        return "".join(t.text or "" for t in cell.findall(".//m:t", _XML_NS))
+    if value is None:
+        return ""
+    raw = value.text or ""
+    if cell_type == "s":
+        return shared_strings[int(raw)]
+    return raw
+
+
+def _format_info_value(table_name, header, value):
+    if value in (None, ""):
+        return ""
+    text = str(value)
+    try:
+        numeric = float(text)
+    except ValueError:
+        return text
+    if table_name == "Info_Financing" and header == "Interest":
+        return f"{numeric:.2%}"
+    if numeric.is_integer():
+        return str(int(numeric))
+    return f"{numeric:g}"
+
+
+@lru_cache(maxsize=4)
+def _load_misc_info_tables_cached(path_str, mtime_ns):
+    with zipfile.ZipFile(path_str) as zip_file:
+        return _parse_misc_info_tables_zip(zip_file)
+
+
+def _parse_misc_info_tables_zip(zip_file):
+    tables = []
+    shared = _shared_strings(zip_file)
+    sheet_path = _sheet_path(zip_file, "Info")
+    sheet_root = ET.fromstring(zip_file.read(sheet_path))
+    cells = {
+        cell.attrib["r"]: _cell_value(cell, shared)
+        for cell in sheet_root.findall(".//m:c", _XML_NS)
+    }
+
+    table_meta = {}
+    for table_path in _sheet_table_paths(zip_file, sheet_path):
+        table_root = ET.fromstring(zip_file.read(table_path))
+        name = table_root.attrib.get("name") or table_root.attrib.get("displayName")
+        if name in MISC_INFO_TABLES:
+            table_meta[name] = {
+                "range": table_root.attrib["ref"],
+                "headers": [
+                    col.attrib.get("name", "")
+                    for col in table_root.find("m:tableColumns", _XML_NS)
+                ],
+            }
+
+    missing = [table_name for table_name in MISC_INFO_TABLES if table_name not in table_meta]
+    if missing:
+        raise ValueError(f"Info sheet is missing required tables: {', '.join(missing)}")
+
+    for table_name in MISC_INFO_TABLES:
+        meta = table_meta[table_name]
+        start_ref, end_ref = meta["range"].split(":")
+        start_row, start_col = _split_cell_ref(start_ref)
+        end_row, end_col = _split_cell_ref(end_ref)
+        headers = meta["headers"]
+        rows = []
+        for row_idx in range(start_row + 1, end_row + 1):
+            row = []
+            for col_idx, header in zip(range(start_col, end_col + 1), headers):
+                cell_ref = f"{_number_to_column(col_idx)}{row_idx}"
+                row.append(_format_info_value(table_name, header, cells.get(cell_ref, "")))
+            if any(value != "" for value in row):
+                rows.append(row)
+        tables.append({
+            "name": table_name,
+            "range": meta["range"],
+            "headers": headers,
+            "rows": rows,
+        })
+    return tables
+
+
+def _load_uploaded_misc_info_tables(file_storage):
+    return _parse_misc_info_tables_zip(zipfile.ZipFile(io.BytesIO(file_storage.read())))
+
+
+def _replace_misc_info_rows(tables, source):
+    CottonIndexRow.query.filter(
+        CottonIndexRow.table_name.in_(MISC_INFO_TABLES)
+    ).delete(synchronize_session=False)
+    for table in tables:
+        headers = table["headers"]
+        for row_index, row in enumerate(table["rows"]):
+            db.session.add(CottonIndexRow(
+                table_name=table["name"],
+                row_index=row_index,
+                data=dict(zip(headers, row)),
+                source=source,
+            ))
+    db.session.commit()
+
+
+def _load_uploaded_misc_info_tables_from_db():
+    tables = []
+    for table_name in MISC_INFO_TABLES:
+        rows = (CottonIndexRow.query
+                .filter_by(table_name=table_name)
+                .order_by(CottonIndexRow.row_index)
+                .all())
+        if not rows:
+            return []
+        headers = MISC_INFO_HEADERS[table_name]
+        tables.append({
+            "name": table_name,
+            "range": None,
+            "headers": headers,
+            "rows": [[row.data.get(header, "") for header in headers] for row in rows],
+        })
+    return tables
+
+
+def load_misc_info_tables():
+    uploaded = _load_uploaded_misc_info_tables_from_db()
+    if uploaded:
+        return uploaded
+    if not EXCEL_PATH.exists():
+        _log.warning("Cotton info workbook not found: %s", EXCEL_PATH)
+        return []
+    return _load_misc_info_tables_cached(str(EXCEL_PATH), EXCEL_PATH.stat().st_mtime_ns)
 
 
 _RAW_CT_FUTURES = _generate_ct_futures()
@@ -301,4 +522,31 @@ def index():
                            grouped=dict(sorted(grouped.items())),
                            upcoming_date=upcoming_date,
                            futures=PARSED_CT_FUTURES,
-                           options=PARSED_CT_OPTIONS)
+                           options=PARSED_CT_OPTIONS,
+                           misc_info_tables=load_misc_info_tables())
+
+
+@cotton_info_bp.route("/info/api/upload", methods=["POST"])
+def api_upload():
+    """Upload an .xlsm / .xlsx and replace miscellaneous Info tables."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        tables = _load_uploaded_misc_info_tables(f)
+        _replace_misc_info_rows(tables, source="upload")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 422
+    except Exception as e:
+        db.session.rollback()
+        _log.exception("Cotton info upload failed")
+        return jsonify({"error": str(e)}), 500
+
+    counts = {table["name"]: len(table["rows"]) for table in tables}
+    return jsonify({
+        "ok": True,
+        "origins": counts.get("Info_Origins", 0),
+        "colours": counts.get("Info_Colours", 0),
+        "waf_colours": counts.get("Info_WAF_Colours", 0),
+        "financing": counts.get("Info_Financing", 0),
+    })
