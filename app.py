@@ -29,6 +29,7 @@ from routes.cotton_physical import cotton_physical_bp
 from routes.neon_sync import neon_sync_bp
 from routes.coffee_dashboard import coffee_dashboard_bp
 from routes.coffee_prices import coffee_prices_bp
+from routes.coffee_info import coffee_info_bp
 
 
 def create_app():
@@ -61,6 +62,7 @@ def create_app():
     # Coffee section — mounted under /coffee.
     app.register_blueprint(coffee_dashboard_bp, url_prefix="/coffee")
     app.register_blueprint(coffee_prices_bp,    url_prefix="/coffee")
+    app.register_blueprint(coffee_info_bp,      url_prefix="/coffee")
 
     # Cotton section — mounted under /cotton.
     app.register_blueprint(cotton_dashboard_bp, url_prefix="/cotton")

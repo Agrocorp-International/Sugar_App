@@ -86,7 +86,7 @@
 
     /* ── Section-specific navbar colors ──────────────────────────────── */
     .cotton-nav { background-color: #1e40af !important; }  /* deep blue */
-    .coffee-nav { background-color: #4a1c00 !important; }  /* dark espresso brown */
+    .coffee-nav { background-color: #6F4E37 !important; }  /* coffee brown */
 
     /* ── Global price-source toggle (in navbar) ──────────────────────── */
     .price-live-nav { background-color: #dc2626 !important; }
@@ -436,6 +436,11 @@
           <li class="nav-item">
             <a class="nav-link {% if ep == 'coffee_prices.index' %}active{% endif %}" href="{{ url_for('coffee_prices.index') }}">
               <i class="bi bi-currency-dollar me-1"></i>Prices
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if ep == 'coffee_info.index' %}active{% endif %}" href="{{ url_for('coffee_info.index') }}">
+              <i class="bi bi-info-circle me-1"></i>Info
             </a>
           </li>
           {% endif %}

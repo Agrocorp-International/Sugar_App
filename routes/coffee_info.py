@@ -11,13 +11,15 @@ Formulas (ICE Coffee C product specifications):
     No holiday adjustment per ICE spec.
 """
 import re
-from datetime import date, timedelta
-from flask import Blueprint
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from flask import Blueprint, render_template
 
 from services.exchange_calendar import (
     FUTURES_MONTH_CODES,
     YEARS_BACK,
     YEARS_FORWARD,
+    RAW_HOLIDAYS,
     HOLIDAY_DATES,
     workday,
     last_biz_of_month,
@@ -94,3 +96,71 @@ def _build_kc_expiry_map():
 
 # Generated at import; covers YEARS_BACK..YEARS_FORWARD rolling window.
 KC_FUTURES_EXPIRY_MAP = _build_kc_expiry_map()
+
+
+def _build_kc_futures_list():
+    current_year = date.today().year
+    result = []
+    for yr in range(current_year - YEARS_BACK, current_year + YEARS_FORWARD + 1):
+        yy = yr % 100
+        for m in KC_FUTURES_MONTHS:
+            contract = f"KC{m}{yy:02d}"
+            month = FUTURES_MONTH_CODES.get(m)
+            ref_date = date(yr, month, 1) if month else None
+            expiry = KC_FUTURES_EXPIRY_MAP.get(contract)
+            result.append({"contract": contract, "ref_date": ref_date, "expiry": expiry})
+    return result
+
+
+def _build_kc_options_list():
+    current_year = date.today().year
+    result = []
+    for yr in range(current_year - YEARS_BACK, current_year + YEARS_FORWARD + 1):
+        yy = yr % 100
+        for m in KC_FUTURES_MONTHS:
+            contract = f"KC{m}{yy:02d}"
+            month = FUTURES_MONTH_CODES.get(m)
+            if month:
+                prev_month = month - 1 if month > 1 else 12
+                prev_year = yr if month > 1 else yr - 1
+                ref_date = date(prev_year, prev_month, 1)
+            else:
+                ref_date = None
+            expiry = _last_friday(prev_year, prev_month) if ref_date else None
+            result.append({
+                "contract": contract,
+                "underlying": contract,
+                "ref_date": ref_date,
+                "expiry": expiry,
+            })
+    return result
+
+
+@coffee_info_bp.route("/info")
+def index():
+    today = date.today()
+
+    holidays_list = sorted([
+        {
+            "name": name,
+            "date": datetime.strptime(d, "%Y-%m-%d").date(),
+            "day": datetime.strptime(d, "%Y-%m-%d").strftime("%A"),
+        }
+        for name, d in RAW_HOLIDAYS
+    ], key=lambda x: x["date"])
+
+    upcoming_date = next(
+        (h["date"] for h in holidays_list if h["date"] >= today), None
+    )
+
+    grouped = defaultdict(list)
+    for h in holidays_list:
+        grouped[h["date"].year].append(h)
+
+    return render_template(
+        "coffee/info.html",
+        futures=_build_kc_futures_list(),
+        options=_build_kc_options_list(),
+        grouped=dict(sorted(grouped.items())),
+        upcoming_date=upcoming_date,
+    )

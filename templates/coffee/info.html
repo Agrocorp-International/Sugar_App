@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Info - Coffee Trading{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h4 class="mb-0">Info</h4>
+  <p class="text-muted small mt-1">Reference data for KC futures/options contracts and NYSE market holidays.</p>
+</div>
+
+<div class="d-flex align-items-start gap-4 flex-wrap">
+
+  {# ── KC Futures Contracts ─────────────────────────────────────────────── #}
+  <div class="card d-inline-block">
+    <div class="card-header fw-semibold py-1 px-2">KC Futures (Coffee C Arabica)</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0 w-auto">
+        <thead class="table-dark">
+          <tr>
+            <th class="text-center">Contract</th>
+            <th class="text-center">Ref Date</th>
+            <th class="text-center">Expiry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in futures %}
+            <tr>
+              <td class="font-monospace">{{ f.contract }}</td>
+              <td class="text-nowrap">
+                {% if f.ref_date %}{{ f.ref_date.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+              <td class="text-nowrap">
+                {% if f.expiry %}{{ f.expiry.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── KC Options Contracts ─────────────────────────────────────────────── #}
+  <div class="card d-inline-block">
+    <div class="card-header fw-semibold py-1 px-2">KC Options (Coffee C Arabica)</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0 w-auto">
+        <thead class="table-dark">
+          <tr>
+            <th class="text-center">Contract</th>
+            <th class="text-center">Underlying</th>
+            <th class="text-center">Ref Date</th>
+            <th class="text-center">Expiry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in options %}
+            <tr>
+              <td class="font-monospace">{{ o.contract }}</td>
+              <td class="font-monospace">{{ o.underlying }}</td>
+              <td class="text-nowrap">
+                {% if o.ref_date %}{{ o.ref_date.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+              <td class="text-nowrap">
+                {% if o.expiry %}{{ o.expiry.strftime("%d %b %Y") }}{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── US Market Holidays ──────────────────────────────────────────────── #}
+  <div class="card d-inline-block">
+    <div class="card-header fw-semibold py-1 px-2">US Market Holidays (NYSE)</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0 w-auto">
+        <thead class="table-dark">
+          <tr>
+            <th class="text-center">Holiday</th>
+            <th class="text-center">Date</th>
+            <th class="text-center">Day</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for year, entries in grouped.items() %}
+            <tr class="table-secondary">
+              <td colspan="3" class="fw-semibold small text-muted py-1">{{ year }}</td>
+            </tr>
+            {% for h in entries %}
+              <tr {% if h.date == upcoming_date %}class="table-warning"{% endif %}>
+                <td>
+                  {{ h.name }}
+                  {% if h.date == upcoming_date %}
+                    <span class="badge bg-warning text-dark ms-1 small">Next</span>
+                  {% endif %}
+                </td>
+                <td class="text-nowrap">{{ h.date.strftime("%d %b %Y") }}</td>
+                <td class="text-muted">{{ h.day }}</td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
