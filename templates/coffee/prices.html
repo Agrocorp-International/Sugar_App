@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Market Prices - Coffee Trading{% endblock %}
+
+{% block content %}
+{% set active_contracts = watched | rejectattr('expired') | list %}
+{% set expired_contracts = watched | selectattr('expired') | list %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0">Coffee Market Prices
+    {% if pricing_date %}<span class="text-muted ms-2">({{ pricing_date.strftime('%d %b %Y') }})</span>{% endif %}
+    {% if watched %}<span class="badge bg-secondary ms-2 fs-6">{{ watched|length }}</span>{% endif %}
+  </h4>
+  {% if last_sett_sgt or last_live_sgt %}
+  <div class="text-muted small text-end lh-sm">
+    <div><i class="bi bi-clock-history me-1"></i>Sett-1: {{ last_sett_sgt.strftime('%d %b %Y, %H:%M:%S') + ' SGT' if last_sett_sgt else '—' }}</div>
+    <div><i class="bi bi-activity me-1"></i>Live: {{ last_live_sgt.strftime('%d %b %Y, %H:%M:%S') + ' SGT' if last_live_sgt else '—' }}</div>
+    <div><i class="bi bi-robot me-1"></i>Auto-refresh (Sett-1 + Live): daily at 08:00 SGT</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if missing_prices %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-4" role="alert">
+  <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+  <div class="flex-grow-1">
+    <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+      <strong>{{ missing_prices|length }} contract{{ 's' if missing_prices|length != 1 }} in FUTS Trades with no price loaded:</strong>
+      <form action="{{ url_for('coffee_prices.contracts_bulk_add') }}" method="POST">
+        <input type="hidden" name="contracts" value="{{ missing_prices | join(',') }}">
+        <button type="submit" class="btn btn-secondary btn-sm">
+          <i class="bi bi-plus me-1"></i>Add All to Watchlist
+        </button>
+      </form>
+    </div>
+    <div class="mt-1">
+      {% for c in missing_prices %}
+        <span class="badge bg-secondary me-1">{{ c }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+  <form action="{{ url_for('coffee_prices.fetch_tradestation') }}" method="POST">
+    <input type="hidden" name="mode" value="sett1">
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-cloud-download me-1"></i>Fetch Sett-1
+    </button>
+  </form>
+  <form action="{{ url_for('coffee_prices.fetch_tradestation') }}" method="POST">
+    <input type="hidden" name="mode" value="live">
+    <button type="submit" class="btn btn-success btn-sm">
+      <i class="bi bi-activity me-1"></i>Fetch Live
+    </button>
+  </form>
+  <form action="{{ url_for('coffee_prices.fetch_tradestation') }}" method="POST">
+    <input type="hidden" name="mode" value="all">
+    <button type="submit" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-arrow-repeat me-1"></i>Fetch All
+    </button>
+  </form>
+  <div class="vr"></div>
+
+  <form action="{{ url_for('coffee_prices.contracts_add') }}" method="POST" class="d-flex align-items-center gap-2">
+    <input type="text" name="contract" class="form-control form-control-sm" style="max-width: 160px;"
+           placeholder="e.g. KCH27" required autocomplete="off">
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus me-1"></i>Add
+    </button>
+  </form>
+  <button class="btn btn-outline-secondary btn-sm" type="button"
+          data-bs-toggle="collapse" data-bs-target="#bulkAddCollapse">
+    <i class="bi bi-list-ul me-1"></i>Bulk Add
+  </button>
+  <form action="{{ url_for('coffee_prices.archive') }}" method="POST"
+        onsubmit="return confirm('Copy Sett-1 and Delta-1 into Sett-2 and Delta-2? Do this before refreshing prices.')">
+    <button type="submit" class="btn btn-outline-danger btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>Archive Sett-1 → Sett-2
+    </button>
+  </form>
+  {% if price_map %}
+  <form action="{{ url_for('coffee_prices.clear') }}" method="POST"
+        onsubmit="return confirm('Clear all stored coffee prices?')">
+    <button type="submit" class="btn btn-outline-danger btn-sm">
+      <i class="bi bi-trash me-1"></i>Clear All
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="collapse mb-4" id="bulkAddCollapse">
+  <div class="card card-body py-2" style="max-width: 400px;">
+    <form action="{{ url_for('coffee_prices.contracts_bulk_add') }}" method="POST">
+      <label class="form-label small fw-semibold">Paste contracts (comma or line separated)</label>
+      <textarea name="contracts" class="form-control form-control-sm mb-2" rows="4"
+                placeholder="KCH27, KCK27&#10;KCN27&#10;KCH27C18500" required></textarea>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus me-1"></i>Add All
+      </button>
+    </form>
+  </div>
+</div>
+
+{% if active_contracts %}
+<div class="card d-inline-block mb-4" style="min-width: 480px;">
+  <table class="table table-hover table-sm mb-0">
+    <thead class="table-dark">
+      <tr>
+        <th style="width:28px;"></th>
+        <th class="text-center">Contract</th>
+        <th class="text-center">Type</th>
+        <th class="text-center" style="background-color:#1565c0;">Sett-1</th>
+        <th class="text-center" style="background-color:#1565c0;">Delta-1</th>
+        <th class="text-center" style="background-color:#1565c0;">IV-1</th>
+        <th class="text-center" style="background-color:#2e7d32;">Live</th>
+        <th class="text-center" style="background-color:#2e7d32;">Live Δ</th>
+        <th class="text-center" style="background-color:#2e7d32;">Live IV</th>
+        <th class="text-center" style="background-color:#ffc107; color:#212529;">Sett-2</th>
+        <th class="text-center" style="background-color:#ffc107; color:#212529;">Delta-2</th>
+        <th class="text-center">Exp. Date</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="watched-tbody">
+      {% for wc in active_contracts %}
+        {% set mp = price_map.get(wc.contract) %}
+        <tr data-id="{{ wc.id }}">
+          <td class="text-muted drag-handle" style="cursor:grab; user-select:none;">&#8942;&#8942;</td>
+          <td class="fw-semibold">
+            {{ wc.contract }}
+            {% if not mp %}
+              <span class="badge bg-danger ms-1" title="No settlement price loaded">No price</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if wc.contract|length <= 5 %}
+              <span class="badge bg-primary">Futures</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Options</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if mp %}{% if mp.settlement is not none %}{{ "%.3f"|format(mp.settlement) if wc.contract|length > 5 else "%.2f"|format(mp.settlement) }}{% else %}—{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          {% set eff_delta = mp.delta if (mp and mp.delta is not none) else (1.0 if wc.contract|length <= 5 else none) %}
+          <td class="text-end {% if eff_delta is not none %}{% if eff_delta >= 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">
+            {% if eff_delta is not none %}{{ "%+.2f"|format(eff_delta) }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end">
+            {% if mp and mp.iv is not none %}{{ "%.1f"|format(mp.iv * 100) }}%{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end">
+            {% if mp and mp.live_price is not none %}{{ "%.3f"|format(mp.live_price) if wc.contract|length > 5 else "%.2f"|format(mp.live_price) }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          {% set live_d = mp.live_delta if (mp and mp.live_delta is not none) else none %}
+          <td class="text-end {% if live_d is not none %}{% if live_d >= 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">
+            {% if live_d is not none %}{{ "%+.2f"|format(live_d) }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end">
+            {% if mp and mp.live_iv is not none %}{{ "%.1f"|format(mp.live_iv * 100) }}%{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end sett2-cell" data-id="{{ wc.id }}" data-field="settlement2" style="cursor:pointer; min-width:70px;">
+            <span class="sett2-display">{% if mp and mp.settlement2 is not none %}{{ "%.2f"|format(mp.settlement2) }}{% else %}<span class="text-muted">—</span>{% endif %}</span>
+          </td>
+          <td class="text-end sett2-cell" data-id="{{ wc.id }}" data-field="delta2" style="cursor:pointer; min-width:70px;">
+            <span class="sett2-display">{% if mp and mp.delta2 is not none %}{{ "%+.2f"|format(mp.delta2) }}{% else %}<span class="text-muted">—</span>{% endif %}</span>
+          </td>
+          <td class="text-muted">
+            {% set exp = expiry_map.get(wc.contract) %}
+            {% if exp %}{{ exp.strftime('%d %b %Y') }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>
+            <form class="delete-form" action="{{ url_for('coffee_prices.contracts_delete', id=wc.id) }}" method="POST">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif not expired_contracts %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-list-ul fs-1"></i>
+  <p class="mt-2">No coffee contracts added yet.</p>
+</div>
+{% endif %}
+
+{% if expired_contracts %}
+<h6 class="mb-3 text-muted">Expired Contracts</h6>
+<div class="card d-inline-block" style="min-width: 480px;">
+  <table class="table table-hover table-sm mb-0">
+    <thead class="table-danger">
+      <tr>
+        <th class="text-center">Contract</th>
+        <th class="text-center">Type</th>
+        <th class="text-center">Sett-1</th>
+        <th class="text-center">Delta-1</th>
+        <th class="text-center">IV-1</th>
+        <th class="text-center">Exp. Date</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for wc in expired_contracts %}
+        {% set mp = price_map.get(wc.contract) %}
+        <tr class="text-muted">
+          <td class="fw-semibold">
+            {{ wc.contract }}
+            {% if not mp %}
+              <span class="badge bg-danger ms-1" title="No settlement price loaded">No price</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if wc.contract|length <= 5 %}
+              <span class="badge bg-primary">Futures</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Options</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if mp %}{% if mp.settlement is not none %}{{ "%.3f"|format(mp.settlement) if wc.contract|length > 5 else "%.2f"|format(mp.settlement) }}{% else %}—{% endif %}{% else %}—{% endif %}
+          </td>
+          {% set eff_delta = mp.delta if (mp and mp.delta is not none) else (1.0 if wc.contract|length <= 5 else none) %}
+          <td class="text-end">
+            {% if eff_delta is not none %}{{ "%+.2f"|format(eff_delta) }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if mp and mp.iv is not none %}{{ "%.1f"|format(mp.iv * 100) }}%{% else %}—{% endif %}
+          </td>
+          <td>
+            {% set exp = expiry_map.get(wc.contract) %}
+            {% if exp %}{{ exp.strftime('%d %b %Y') }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <form class="delete-form" action="{{ url_for('coffee_prices.contracts_delete', id=wc.id) }}" method="POST">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+  // Restore scroll position after reload
+  const savedY = sessionStorage.getItem('coffeePricesScrollY');
+  if (savedY !== null) {
+    window.scrollTo(0, parseInt(savedY));
+    sessionStorage.removeItem('coffeePricesScrollY');
+  }
+
+  document.querySelectorAll('.delete-form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      sessionStorage.setItem('coffeePricesScrollY', window.scrollY);
+      fetch(form.action, { method: 'POST' }).then(() => location.reload());
+    });
+  });
+</script>
+<script>
+  const tbody = document.getElementById('watched-tbody');
+  if (tbody) {
+    Sortable.create(tbody, {
+      animation: 150,
+      handle: '.drag-handle',
+      onEnd() {
+        const ids = [...tbody.querySelectorAll('tr')].map(tr => Number(tr.dataset.id));
+        fetch('{{ url_for("coffee_prices.contracts_reorder") }}', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ids})
+        });
+      }
+    });
+  }
+
+  // Inline editing for Sett-2 and Delta-2
+  document.querySelectorAll('.sett2-cell').forEach(td => {
+    td.addEventListener('click', function () {
+      if (td.querySelector('input')) return;
+      const display = td.querySelector('.sett2-display');
+      const raw = display.textContent.trim().replace(/[^0-9.\-+]/g, '');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = '0.01';
+      input.value = raw === '—' || raw === '' ? '' : raw;
+      input.className = 'form-control form-control-sm text-end p-0 px-1';
+      input.style.width = '80px';
+      td.replaceChildren(input);
+      input.focus();
+      input.select();
+
+      function save() {
+        const id = td.dataset.id;
+        const field = td.dataset.field;
+        const val = input.value.trim() === '' ? null : parseFloat(input.value);
+        fetch('{{ url_for("coffee_prices.contracts_update_sett2", id=0) }}'.slice(0, -1) + id, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({[field]: val})
+        })
+        .then(r => r.json())
+        .then(data => {
+          const v = data[field];
+          const formatted = v === null ? '<span class="text-muted">—</span>'
+            : field === 'delta2' ? (v >= 0 ? '+' : '') + v.toFixed(2)
+            : v.toFixed(2);
+          td.innerHTML = `<span class="sett2-display">${formatted}</span>`;
+        });
+      }
+
+      input.addEventListener('blur', save);
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') {
+          td.innerHTML = `<span class="sett2-display">${display.innerHTML}</span>`;
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}

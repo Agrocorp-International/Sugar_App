@@ -36,8 +36,8 @@ BASE_URL = "https://api.tradestation.com/v3/marketdata"
 _EXCHANGE_TZ = ZoneInfo("America/New_York")
 _SGT = ZoneInfo("Asia/Singapore")
 
-_FUTURE_RE = re.compile(r'^(?:S[BW]|CT)[A-Z]\d{2}$')
-_OPTION_RE  = re.compile(r'^((?:S[BW]|CT)[A-Z]\d{2})([CP])(\d+)$')
+_FUTURE_RE = re.compile(r'^(?:S[BW]|CT|KC)[A-Z]\d{2}$')
+_OPTION_RE  = re.compile(r'^((?:S[BW]|CT|KC)[A-Z]\d{2})([CP])(\d+)$')
 _RISK_FREE_RATE_FALLBACK = 0.045  # fallback if SOFR fetch fails
 
 # Static mapping: internal 2-letter prefix → TradeStation root.
@@ -49,16 +49,19 @@ _FUTURES_ROOT_MAP = {
     "SB": "SB",   # ICE Sugar No.11
     "SW": "CW",   # ICE White Sugar No.5 (TradeStation uses CW)
     "CT": "CT",   # ICE Cotton #2 — PLACEHOLDER, verify before go-live
+    "KC": "KC",   # ICE Coffee C — verify symbol round-trip before go-live
 }
 
 # Strike scale factor per product prefix.
 # SB: strikes stored as hundredths of c/lb  (1600 → K = 16.00)
 # SW: strikes stored as whole USD/ton        (500  → K = 500.0)
 # CT: strikes stored as hundredths of c/lb   (8000 → K = 80.00)  — same as SB
+# KC: strikes stored as hundredths of c/lb  (18500 → K = 185.00) — same as SB; verify with real KC option
 _STRIKE_SCALE = {
     "SB": 0.01,
     "SW": 1.0,
     "CT": 0.01,
+    "KC": 0.01,
 }
 
 
@@ -117,11 +120,23 @@ def _is_sw_trading_session_open(now_utc):
     return datetime.time(3, 45) <= now_time < datetime.time(13, 0)
 
 
+def _is_kc_trading_session_open(now_utc):
+    """ICE Coffee C main session: 9:00 AM – 1:30 PM ET."""
+    now_et = now_utc.astimezone(_EXCHANGE_TZ)
+    trade_date = now_et.date()
+    now_time = now_et.time()
+    if trade_date.weekday() >= 5 or trade_date in HOLIDAY_DATES:
+        return False
+    return datetime.time(9, 0) <= now_time < datetime.time(13, 30)
+
+
 def _is_live_session_open(contract, now_utc):
     """Return True when the contract's official trading session is open."""
     prefix = _contract_prefix(contract)
     if prefix == "CT":
         return _is_ct_trading_session_open(now_utc)
+    if prefix == "KC":
+        return _is_kc_trading_session_open(now_utc)
     if prefix == "SB":
         return _is_sb_trading_session_open(now_utc)
     if prefix == "SW":

@@ -27,6 +27,8 @@ from routes.cotton_options import cotton_options_bp
 from routes.cotton_index import cotton_index_bp
 from routes.cotton_physical import cotton_physical_bp
 from routes.neon_sync import neon_sync_bp
+from routes.coffee_dashboard import coffee_dashboard_bp
+from routes.coffee_prices import coffee_prices_bp
 
 
 def create_app():
@@ -56,6 +58,10 @@ def create_app():
     app.register_blueprint(notes_bp,             url_prefix="/sugar")
     app.register_blueprint(neon_sync_bp,         url_prefix="/sugar")
 
+    # Coffee section — mounted under /coffee.
+    app.register_blueprint(coffee_dashboard_bp, url_prefix="/coffee")
+    app.register_blueprint(coffee_prices_bp,    url_prefix="/coffee")
+
     # Cotton section — mounted under /cotton.
     app.register_blueprint(cotton_dashboard_bp, url_prefix="/cotton")
     app.register_blueprint(cotton_sync_bp,      url_prefix="/cotton")
@@ -76,6 +82,8 @@ def create_app():
         p = request.path
         if p.startswith("/sugar"):
             g.section = "sugar"
+        elif p.startswith("/coffee"):
+            g.section = "coffee"
         elif p.startswith("/cotton"):
             g.section = "cotton"
         else:
