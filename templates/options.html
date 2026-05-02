@@ -178,10 +178,10 @@ document.addEventListener('DOMContentLoaded', function() {
                style="font-size:1rem; min-width:170px;"
                value="{{ as_of_date.isoformat() }}">
       </div>
-      <div class="d-flex align-items-end gap-3">
+      <div id="payoff1-ref-month-control" class="d-flex align-items-end gap-3">
         <div>
           <label class="form-label fw-semibold mb-1">Reference Month (SB)</label>
-          <select name="ref_month" class="form-select form-select-lg" style="min-width:150px; font-size:1rem;">
+          <select name="ref_month" form="payoff1-form" class="form-select form-select-lg" style="min-width:150px; font-size:1rem;">
             {% for f in sb_futures %}
               <option value="{{ f.code }}" {% if f.code == ref_month %}selected{% endif %}>
                 {{ f.label }}{% if f.expiry %} (exp {{ f.expiry.strftime('%d %b %Y') }}){% endif %}
@@ -210,6 +210,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('payoff1-form');
         if (!form) return;
         const btn = document.getElementById('payoff1-load-btn');
+
+        document.addEventListener('DOMContentLoaded', () => {
+          const control = document.getElementById('payoff1-ref-month-control');
+          const slot = document.getElementById('payoff3-ref-month-slot');
+          if (control && slot) slot.replaceWith(control);
+        });
 
         function showLoading() {
           if (!btn) return;
@@ -503,6 +509,7 @@ document.addEventListener('DOMContentLoaded', function() {
                style="font-size:1rem; min-width:170px;"
                value="{% if latest_expiry %}{{ latest_expiry.isoformat() }}{% endif %}">
       </div>
+      <div id="payoff3-ref-month-slot"></div>
       <div>
         <span class="text-muted small fw-semibold text-uppercase" style="letter-spacing:.06em;">Date Interval (days)</span>
         <div class="fw-semibold mt-1" id="s3-date-interval">—</div>
